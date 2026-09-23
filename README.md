@@ -1,256 +1,266 @@
 # ⚡ Aether Sentinels — Strategic Tower Defense
 
-A complete, mobile-ready HTML5 Canvas tower defense game. Zero build step, zero
-external runtime dependencies — pure vanilla JavaScript. Designed to be wrapped
-into a Google Play (Android) app with [Capacitor](https://capacitorjs.com/).
+A mobile-first HTML5 Canvas tower defense game in **vanilla JavaScript** — no
+framework, no build step, and **no runtime dependencies**. Runs in any modern
+browser and is set up to be wrapped as an Android app with
+[Capacitor](https://capacitorjs.com/).
 
 ![icon](assets/icon-192.png)
 
 ---
 
-## ✨ Features
+## Quick start
 
-### Six unique towers — each a distinct strategic role
-| Tower | Glyph | Role |
-|-------|:-----:|------|
-| **Arc Coil** | ⚡ | Chain lightning — arcs between multiple enemies |
-| **Cryo Node** | ❄ | Area slow field for crowd control (+ chance to freeze at max tier) |
-| **Mortar** | 💥 | Splash damage — clears tightly-grouped swarms |
-| **Railgun** | 🎯 | Long-range, armor-piercing single-target; bonus vs bosses |
-| **Aegis Pylon** | ◈ | Support — buffs damage/fire-rate/range of nearby towers |
-| **Venom Spire** | ☣ | Damage-over-time; a % max-HP poison shreds high-HP targets |
-
-Each tower has **3 upgrade tiers** with meaningful trade-offs. Towers interact:
-Pylons buff neighbours, Cryo sets up Mortar splashes, Venom melts what Railguns
-soften. Winning requires a *combination*, not spamming one type.
-
-### Strategic enemies
-Drones, fast Runners, armored Brutes, high-armor Wardens, splitting Spawnlings,
-**Menders** that heal allies, and **Phantoms** that can dodge shots — each
-demands a different counter.
-
-### Boss levels & animations
-Every map ends in a **boss wave**: the **Aether Titan**, the **Hive Mind**
-(continuously spawns minions), and the regenerating **Void Colossus**. Bosses
-have damage resistance, so single-strategy defenses fail. Full particle system:
-muzzle sparks, chain-lightning beams, explosions, freeze/poison overlays, screen
-shake, floating damage numbers, and procedural WebAudio sound (no audio files).
-
-### 4 hand-designed maps
-Verdant Pass (Easy) → Frost Canyon (Normal) → Ember Foundry (Hard) →
-Void Nexus (Extreme). Each has a unique winding path and build-node layout.
-Progress, unlocks, and star ratings are saved to `localStorage`.
-
-### Coins, level-ups & rewarded ads
-A persistent **coin** meta-currency (separate from in-match gold) is saved to
-`localStorage`. Tap the **+** next to the coin counter to watch a **rewarded ad**
-(a professional ad popup with a rotating creative, countdown, and claim button)
-and earn coins. Spend coins to **level up any tower or hero** — tap a unit and
-press the level-up button (e.g. Venom Spire level 1 → 2 = **50 coins**, scaling
-up per level). Higher levels boost damage / fire-rate / health and show a level
-badge; you can also give each level its own image (see below).
-
-> **Real ads:** the ad flow lives in `js/ads.js` and is a self-contained
-> simulation. To ship real rewarded ads on Google Play, replace the body of
-> `Ads.showRewarded()` with your ad SDK call (e.g. AdMob via a Capacitor plugin)
-> and call the reward callback on completion — the rest of the game is unchanged.
-
-### 🎨 Custom skins & sounds — edit one file
-Open **`js/assets.config.js`** and drop in your own image/audio URLs. Change a URL,
-reload the game, and that unit uses your art/sound — no code changes:
-
-```js
-images.venom = [
-  "assets/venom_l1.png",   // Venom Spire at Level 1
-  "assets/venom_l2.png",   // Level 2 (after paying coins)
-  "assets/venom_l3.png",   // Level 3 ...
-];
-audio.venom = "assets/venom_shot.mp3";   // played every time Venom Spire fires
+```bash
+git clone https://github.com/KADIRTRADING/aether-sentinels.git
+cd aether-sentinels
+npm run serve          # -> http://localhost:8080   (no install needed)
 ```
 
-Images are **per level** (an array), so a unit's picture changes as you pay coins
-to level it up. Any unit left blank keeps its built-in vector art / procedural
-sound. Works for all towers (`arc, cryo, cannon, rail, pylon, venom`) and heroes
-(`pistol, smg, rifle, sniper, minigun, rocket`). Level-up costs and ad rewards are
-also configurable in that file.
+`npm run serve` uses a small zero-dependency Node server (`tools/serve.js`), so
+you do **not** need `npm install` to play or to run the tests.
 
-### 🔊 Tap to mute
-Tap any empty part of the battlefield to toggle sound on/off (with an on-screen
-flash), or use the speaker button in the HUD. The setting persists.
+```bash
+npm test               # 38 unit/integration tests (pure Node, no deps)
+npm run test:browser   # drives index.html in headless Chrome
+```
+
+> `npm install` is only required for the Android/Capacitor wrapper. Serving a
+> local HTTP origin (rather than opening `index.html` via `file://`) is
+> recommended so the WebAudio context and `localStorage` behave normally.
+
+---
+
+## Controls
+
+| Action | Touch | Mouse / Keyboard |
+|---|---|---|
+| Select a tower / hero to place | Tap a tray card | Click |
+| Build | Tap a glowing ⬡ node | Click |
+| Inspect / upgrade / sell | Tap a placed unit | Click |
+| Move a hero | Press and drag it | Click and drag |
+| **Fuse heroes** | Drag one hero onto another of the same weapon | Same |
+| Aim Orbital Strike | Tap ☄ then tap the map | `Q`, then click |
+| Cryo Pulse | Tap ❄ | `W` |
+| Start wave | Tap **Start Wave** | `Space` / `Enter` |
+| Pause | Tap ❚❚ | `P` |
+| Speed 1× / 2× / 3× | Tap ▶ | `1` `2` `3` |
+| Mute | Tap 🔊 in the HUD | `M` |
+| Clear selection | Tap empty ground | `Esc` |
+
+---
+
+## How the game works
+
+**Goal.** Enemies walk the lit path toward your Core. Every leak costs a life;
+lose them all and the run ends. Clear all waves — including the boss — to win.
+
+### Two currencies (a common point of confusion, now explained in-game)
+
+| | Earned | Spent on | Persists? |
+|---|---|---|---|
+| **⬢ Gold** | Kills and cleared waves, **during** a battle | Building & upgrading towers/heroes | No — resets each match |
+| **🪙 Coins** | Clearing maps, improving a star rating, rewarded ads | Permanent **level-ups** for a unit | Yes — saved to `localStorage` |
+
+### Towers — each has a distinct counter-role
+
+| Tower | Cost | Role |
+|---|---|---|
+| ⚡ **Arc Coil** | 90 | Chain lightning; energy **ignores half of armor** |
+| ❄ **Cryo Node** | 80 | Area slow field (control, low damage) |
+| 💥 **Mortar** | 120 | Splash — clears packed swarms |
+| 🎯 **Railgun** | 150 | Long range, **armor-piercing**, bonus vs bosses |
+| ◈ **Aegis Pylon** | 100 | Support — buffs damage/rate/range of nearby towers |
+| ☣ **Venom Spire** | 130 | Poison over time; **ignores armor**, great vs high HP |
+
+Each has 3 gold upgrade tiers, 6 coin levels, and a targeting priority
+(First / Last / Strongest / Closest).
+
+### Enemies — each checks a different part of your build
+
+`Drone` baseline · `Runner` speed · `Spawnling` crowds · `Brute` high HP ·
+**`Warden`** heavy armor · **`Mender`** heals nearby allies ·
+**`Phantom`** 25% dodge (DoT and AoE cannot be dodged).
+
+The HUD shows a **NEXT** preview of the coming wave's composition so you can
+prepare counters.
 
 ### Heroes & weapon fusion
-Deploy **soldier heroes** anywhere on the battlefield (free placement, not tied to
-build nodes). Each carries a detailed, animated weapon — muzzle flashes, ejected
-shell casings, tracer rounds, recoil kickback, and distinct procedural gun audio.
 
-**Drag one hero onto another of the same weapon to fuse them** into the next weapon
-up the ladder:
+Heroes deploy anywhere (not restricted to build nodes) and can be dragged to
+reposition. **Drag one hero onto another of the same weapon to fuse them:**
 
 `Pistol → SMG → Assault Rifle → Sniper Rifle → Minigun → Rocket Launcher`
 
-Each fusion is a bigger, deadlier gun: the SMG sprays bursts, the rifle is a solid
-automatic, the sniper is armor-piercing hitscan, the minigun has spinning barrels,
-and the Rocket Launcher fires explosive splash rounds. Heroes can be tapped to set
-their targeting priority or sold. This adds an active, hands-on layer on top of the
-static tower defense — position your squad and merge on the fly.
+### Bosses
 
-### Targeting priorities
-Every attacking tower can be set to target **First** (closest to core), **Last**
-(earliest on path), **Strongest** (highest HP — great for bosses), or **Closest**
-(nearest to the tower). Tap a tower to change its mode — a core layer of control.
-
-### Active abilities
-Two tactical abilities on cooldown, mapped to on-screen buttons:
-- ☄ **Orbital Strike** — tap to arm, then tap the map to drop a massive true-damage
-  blast (ignores armor/resist). 25s cooldown.
-- ❄ **Cryo Pulse** — instantly freezes every enemy on the map for 3s. 40s cooldown.
-
-These let you answer a boss rush or a leak emergency with skill, not just economy.
-
-### Settings
-A settings screen with a sound on/off toggle and a volume slider, both persisted
-to `localStorage` and applied live.
-
-### Mobile-first
-Touch + mouse controls, responsive canvas that fits any screen, fullscreen
-landscape PWA manifest, a parallax starfield, dramatic boss intro animations,
-and a full menu / level-select / how-to-play / settings / results UI.
+`Aether Titan` (softest, first boss) · `Hive Mind` (spawns minions, capped) ·
+`Void Colossus` (regenerates; 45% tougher on Extreme). Bosses have damage
+resistance, so a single-strategy defence will not stop them. A boss leak costs
+~25% of the map's life pool.
 
 ---
 
-## ▶️ Play it now (browser)
+## Custom skins & sounds — edit one file
 
-No install needed. Serve the folder over HTTP (audio & localStorage need a real origin):
+Open **`js/assets.config.js`** and drop in your own image/audio URLs. Change a
+URL, reload, done — no code changes:
+
+```js
+images.venom = [
+  "assets/venom_l1.png",   // shown at Level 1
+  "assets/venom_l2.png",   // Level 2 (after paying coins)
+  "assets/venom_l3.png",   // Level 3 ...
+];
+audio.venom = "assets/venom_shot.mp3";   // plays whenever Venom Spire fires
+```
+
+Images are **per level**, so a unit's art changes as you level it up. Anything
+left blank keeps the built-in vector art / procedural sound. Level-up costs and
+ad rewards are configurable in the same file. Unit IDs: towers
+`arc, cryo, cannon, rail, pylon, venom`; heroes
+`pistol, smg, rifle, sniper, minigun, rocket`.
+
+---
+
+## Accessibility
+
+* **Reduced motion** — disables screen shake and thins particles (also honours
+  the OS `prefers-reduced-motion` setting).
+* **High contrast** — brighter text and stronger borders.
+* **Volume / mute** — persisted; mute is also on the `M` key.
+* Keyboard shortcuts for every core action, visible focus outlines, `aria-label`
+  / `aria-pressed` on DOM controls, and ≥44px touch targets.
+
+---
+
+## Project structure
+
+```
+index.html                 App shell (HUD, tray, panels, screens)
+css/style.css              All styling incl. safe-area + responsive rules
+js/
+  utils.js                 Math helpers, seeded PRNG, versioned save store
+  assets.config.js         ★ EDIT ME: custom image/audio URLs per unit & level
+  data.js                  Towers, heroes, enemies, maps, wave generation
+  audio.js                 Procedural WebAudio SFX (incl. per-weapon gun sounds)
+  assetmanager.js          Loads/caches custom art & audio, falls back to vectors
+  ads.js                   Rewarded-ad flow — SIMULATED (see limitations)
+  particles.js             Capped particle system + floating combat text
+  entities.js              Enemy, Projectile, Tower, Bullet, Shell, Hero
+  game.js                  Engine: fixed-timestep loop, waves, economy, render
+  tutorial.js              Contextual first-session coaching
+  ui.js                    HUD, tray, inspect panels, level select, results
+  main.js                  Bootstrap, input (mouse/touch/keys), screen routing
+tools/serve.js             Zero-dependency static server
+test/
+  run-tests.js             38 automated tests  (npm test)
+  harness.js               Loads game logic into Node with browser stubs
+  browser-check.mjs        Headless-Chrome integration run
+  screenshot.mjs           Visual capture helper
+  *-audit.js               Balance / boss / economy / DPS / perf instrumentation
+assets/                    Icons + icon generator
+capacitor.config.json      Android wrapper config
+```
+
+---
+
+## Testing
 
 ```bash
-npm run serve      # -> http://localhost:8080
-# or:  python3 -m http.server 8080
+npm test                 # 38 tests: deterministic rules, balance invariants,
+                         # save migration, reward accounting, regressions
+npm run test:browser     # headless-Chrome run of the real index.html
+npm run audit:balance    # difficulty band + wave threat curves
+npm run audit:perf       # frame cost under heavy load
+npm run audit:dps        # per-tower DPS and DPS-per-gold
 ```
 
-Open the URL, tap **Campaign**, pick a map, place towers on the hex (⬡) nodes,
-and press **Start Wave**.
+`npm run test:browser` requires a Chrome/Chromium binary at
+`/usr/local/bin/chrome` — edit the path in `test/browser-check.mjs` if yours
+differs.
 
-> Opening `index.html` directly via `file://` mostly works, but a local server
-> is recommended so the audio context and save system behave correctly.
+### Manual smoke test
+
+**Desktop browser**
+1. `npm run serve`, open `http://localhost:8080`.
+2. Campaign → Verdant Pass. The tutorial should appear and advance as you
+   select a tower, place it, and inspect it.
+3. Build 3–4 towers, press **Start Wave**; confirm kills, gold gain, and the
+   wave-clear bonus toast.
+4. Tap a tower: upgrade, change targeting, level up with coins, sell.
+5. Deploy two Pistol heroes, drag one onto the other → they fuse into an SMG.
+6. Press `1` `2` `3` — speed changes and motion stays smooth; `P` pauses.
+7. Tap the coin **+** → the demo ad plays, pauses the battle, and pays out once.
+8. Switch to another tab for ~30s and return — the game must **not** fast-forward.
+9. Reach the boss wave; confirm the warning banner and that a boss leak costs
+   several lives (not the whole pool).
+10. Win or lose, then reload the page — progress, stars, and coins persist.
+
+**Mobile browser (landscape)**
+1. Serve on your LAN and open on the phone (`http://<your-ip>:8080`).
+2. Confirm nothing is hidden behind a notch/gesture bar and the whole map fits.
+3. Tap a tower — the inspect panel docks as a compact strip above the tray and
+   the battlefield stays visible; every button is reachable.
+4. Drag a hero; confirm the page never scrolls or pull-to-refreshes.
+5. Rotate the device and back — the canvas re-fits correctly.
+6. Check Settings → Reduced motion removes shake.
+
+**Android (Capacitor)** — see below; not verified in this environment.
 
 ---
 
-## 📁 Project structure
-
-```
-.
-├── index.html               # App shell (HUD, tray, panels, screens)
-├── css/style.css            # All styling
-├── js/
-│   ├── utils.js             # Math helpers + localStorage save (coins, settings, progress)
-│   ├── assets.config.js     # ★ EDIT ME: custom image/audio URLs per unit & level
-│   ├── data.js              # Towers, enemies, heroes, maps, wave generation
-│   ├── audio.js             # Procedural WebAudio sound effects + gun sounds
-│   ├── assetmanager.js      # Loads/caches custom images & audio, hot-reload, fallback
-│   ├── ads.js               # Rewarded-ad flow (simulated; swappable for AdMob)
-│   ├── particles.js         # Particle system + floating text
-│   ├── entities.js          # Enemy, Projectile, Tower classes & mechanics
-│   ├── game.js              # Engine: loop, grid, waves, rendering
-│   ├── ui.js                # DOM UI: HUD, tray, inspect panel, level select
-│   └── main.js              # Bootstrap, screen routing, touch/mouse input
-├── assets/
-│   ├── icon.svg             # Source app icon
-│   ├── icon-192.png         # Generated launcher icons
-│   ├── icon-512.png
-│   └── gen-icons.js         # Regenerate the PNG icons (Node built-ins only)
-├── manifest.webmanifest     # PWA manifest
-├── capacitor.config.json    # Capacitor / Android config
-└── package.json
-```
-
----
-
-## 🎮 How to play
-
-1. **Build** — tap a tower card in the bottom tray, then tap a hex node (⬡) to place it.
-   The card stays selected so you can place several; tap it again to deselect.
-2. **Upgrade / Target / Sell** — tap a placed tower to open its panel. Upgrade through
-   3 tiers, change its **targeting priority** (First/Last/Strongest/Closest), or sell
-   it back for 60% of its cost.
-2b. **Abilities** — tap ☄ then tap the map for an Orbital Strike; tap ❄ for a
-    map-wide Cryo Pulse. Both are on cooldown (shown on the buttons).
-3. **Start Wave** — press the button to summon the next wave. Between waves you have
-   time to build and upgrade. Clearing a wave grants bonus gold.
-4. **Survive** — every enemy that reaches your Core costs a life (bosses cost 10).
-   Clear all waves, including the boss, to win the map and unlock the next.
-5. **Speed / Pause** — use the HUD buttons to fast-forward (1x/2x/3x) or pause.
-
-**Star rating:** 3★ = finish at full lives, 2★ = ≥50% lives, 1★ = survive.
-
----
-
-## 📦 Packaging for Google Play (Android via Capacitor)
-
-The web game is the source of truth; Capacitor wraps it in a native Android
-shell that produces the `.aab` bundle Google Play requires.
-
-### Prerequisites
-- Node.js 18+ and npm
-- **Android Studio** (installs the Android SDK + JDK)
-- A [Google Play Console](https://play.google.com/console) developer account
-  (one-time US$25 registration) to publish
-
-### Steps
+## Packaging for Android (Capacitor)
 
 ```bash
-# 1. Install Capacitor tooling
-npm install
-
-# 2. Initialize the native Android project (reads capacitor.config.json)
-npm run cap:add          # npx cap add android
-
-# 3. Copy the web assets into the native project
-npm run cap:sync         # npx cap sync android
-
-# 4. Open in Android Studio to set icons, run on a device/emulator
-npm run cap:open         # npx cap open android
-```
-
-In Android Studio you can run the app on an emulator/device immediately.
-To ship to Play:
-
-```bash
-# Build a release Android App Bundle (.aab)
+npm install              # needs npm registry access
+npm run cap:add          # creates android/ from capacitor.config.json
+npm run cap:sync         # copy web assets into the native project
+npm run cap:open         # open in Android Studio
 npm run android:bundle   # -> android/app/build/outputs/bundle/release/app-release.aab
 ```
 
-Before uploading you must:
-1. **Generate a signing key** and configure `android/app/build.gradle`
-   (`signingConfigs`) — see Android's
-   [app signing guide](https://developer.android.com/studio/publish/app-signing).
-2. Set launcher icons from `assets/icon-512.png` (Android Studio → *Image Asset*),
-   or drop the generated PNGs into the `res/mipmap-*` folders.
-3. In the Play Console: create the app, complete the store listing, content
-   rating, data-safety form, upload the signed `.aab`, and roll out to a testing
-   track first, then production.
-
-> **Note:** publishing to the Play Store itself (account, signing keys, store
-> listing, review) is a manual process only you can complete — those steps can't
-> be automated from here. Everything up to producing the signed `.aab` is scripted above.
-
-### Alternative wrappers
-- **PWA / TWA (Trusted Web Activity)** via [Bubblewrap](https://github.com/GoogleChromeLabs/bubblewrap)
-  — since a valid `manifest.webmanifest` is included, you can also publish this as
-  an installable PWA and wrap it as a TWA.
-- **Apache Cordova** works too; point `www` at this folder.
+Before uploading to Google Play you must generate a signing key and configure
+`signingConfigs` in `android/app/build.gradle`, set launcher icons from
+`assets/icon-512.png`, and complete the Play Console listing, content rating and
+data-safety forms.
 
 ---
 
-## 🔧 Regenerating icons
+## Limitations — please read
 
-The launcher icons are generated from scratch with Node built-ins (no image libs):
-
-```bash
-node assets/gen-icons.js   # rewrites assets/icon-192.png and icon-512.png
-```
+* **Ads are simulated.** `js/ads.js` is a self-contained demo: it renders a
+  locally generated placeholder, makes **no network request**, and contains **no
+  ad SDK**. The overlay is labelled "Demo placeholder — not a real ad" in-game.
+  To ship real rewarded ads you must supply an ad network account, choose a
+  Capacitor plugin, add the app ID / ad unit IDs, and replace the body of
+  `Ads.showRewarded()` with that SDK's call, invoking the reward callback from
+  its completion handler. None of those credentials exist in this repository, so
+  no real integration was attempted.
+* **Android was not built or verified.** The development environment used for
+  this work has no Android SDK and no access to the npm registry
+  (`npm install` returns HTTP 403), so `npm install`, `npm audit`,
+  `npx cap sync` and a Gradle build could not be executed. The Capacitor
+  configuration and scripts are present and unchanged in structure, but treat
+  the Android path as **untested**. Capacitor packages are declared as
+  `optionalDependencies` so a plain clone never needs them.
+* **Dependency audit could not be run** for the same reason. The browser game
+  ships **zero runtime dependencies**, which keeps its attack surface minimal;
+  Capacitor was bumped `6.1.2 → 6.2.1` (a compatible same-major patch) rather
+  than force-upgraded across majors. Please run `npm install && npm audit` in an
+  environment with registry access before release.
+* **Balance was tuned against scripted players**, not human playtesters. The
+  simulated players do not use abilities and upgrade conservatively, so they
+  represent a *lower* skill bound; a skilled human will find the maps easier.
+* On a very short landscape screen (≈360px tall) the 16×11 grid is
+  height-constrained, so the canvas does not use the full screen width. Changing
+  this would require reshaping the maps.
+* Tower/HUD icons use emoji, which depend on a system emoji font. They render
+  correctly on Android/iOS/desktop but appear as boxes in environments without
+  one (e.g. bare headless Chrome).
 
 ---
 
-## ⚖️ License
+## License
 
-MIT — do whatever you like. Attribution appreciated but not required.
+MIT.
