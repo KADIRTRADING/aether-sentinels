@@ -382,3 +382,9 @@ body.high-contrast .lc-diff { color: #cdd8f7; }
 .howto-sep { margin-top: 6px; color: var(--accent); font-size: 15px; }
 .howto-note { margin-top: 6px; color: var(--muted); font-size: 12.5px; }
 .howto-body { max-height: 62vh; overflow-y: auto; }
+
+
+/* ---------- Result screen detail ---------- */
+#result-sub { max-width: 440px; line-height: 1.6; font-size: 15px; color: var(--text); }
+.res-stars { color: var(--gold); letter-spacing: 3px; font-size: 18px; }
+.res-note { color: var(--muted); font-size: 13px; }

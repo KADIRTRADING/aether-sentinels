@@ -5,4 +5,7 @@ dist/
 .DS_Store
 *.log
 .cache/
-test/
+
+# Transient artifacts produced by the test harnesses
+test/_*.html
+test/*.png

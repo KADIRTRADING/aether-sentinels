@@ -100,7 +100,14 @@ const Store = {
   },
 
   // ---- Ad cooldown timestamp ----
-  getAdReadyAt() { return this.load().adReadyAt || 0; },
+  // Clamped against clock skew / timezone changes: a stored timestamp more than
+  // an hour in the future is treated as ready rather than locking the player out.
+  getAdReadyAt() {
+    const ts = this.load().adReadyAt || 0;
+    const now = Date.now();
+    if (ts > now + 3600 * 1000) { this.setAdReadyAt(0); return 0; }
+    return ts;
+  },
   setAdReadyAt(ts) { const d = this.load(); d.adReadyAt = ts; this.save(d); },
 
   reset() {

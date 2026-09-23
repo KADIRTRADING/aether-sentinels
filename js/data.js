@@ -232,6 +232,7 @@ function generateWaves(map) {
   const scale = map.diffScale != null ? map.diffScale : (1 + map.id * 0.28);
   const waves = [];
   const N = map.waves;
+  let prevThreat = 0;   // enforces a strictly non-decreasing difficulty curve
 
   for (let w = 1; w <= N; w++) {
     const isBoss = w === map.bossWave;
@@ -294,6 +295,19 @@ function generateWaves(map) {
       const heavy = w >= 5 ? 'brute' : 'drone';
       addGroup(heavy, shortfall);
     }
+
+    // Rounding in the group sizes can leave a wave marginally lighter than its
+    // predecessor. Top up with cheap filler so the realised curve never dips.
+    let realised = groups.reduce((a, gr) => a + gr.count * (ENEMY_THREAT[gr.type] || 10), 0);
+    if (realised < prevThreat) {
+      const per = ENEMY_THREAT.drone;
+      const need = Math.ceil((prevThreat - realised) / per);
+      const droneGroup = groups.find(gr => gr.type === 'drone');
+      if (droneGroup) droneGroup.count += need;
+      else groups.push({ type: 'drone', count: need, gap: 0.62, delay });
+      realised += need * per;
+    }
+    prevThreat = realised;
 
     waves.push({ index: w, isBoss, groups });
   }

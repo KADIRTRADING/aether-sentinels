@@ -41,6 +41,7 @@ class Game {
     };
     this.armedAbility = null; // 'strike' when player is aiming a targeted ability
     this.bossIntro = 0; // countdown timer for boss intro banner
+    this._rewarded = false; // guards granting end-of-run rewards more than once
     this.stars = this.makeStars(70);
     this.resize();
     this.speed = 1; this.paused = false;

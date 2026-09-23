@@ -27,10 +27,19 @@ const Ads = {
   cfg() { return (Assets.cfg().ads) || { rewardCoins: 100, adDurationSec: 5, creatives: [] }; },
 
   // Show a rewarded ad. onReward(coins) is called if the user watches to the end.
+  // Re-entrancy guarded: a second call while an ad is open is ignored, so the
+  // reward can never be granted twice for one ad.
   showRewarded(onReward) {
     if (this.active) return;
     const cfg = this.cfg();
     this.active = true; this._onReward = onReward;
+    // Auto-pause the battle behind the ad so the player isn't punished for
+    // watching one, and remember whether they were already paused.
+    this._wasPaused = null;
+    if (typeof Main !== 'undefined' && Main.game && Main.currentScreen === null) {
+      this._wasPaused = Main.game.paused;
+      Main.game.paused = true;
+    }
     // pick a rotating creative
     const creatives = cfg.creatives && cfg.creatives.length ? cfg.creatives : [{ title: 'AETHER', sub: 'Play more!', bg: '#6a5cff', img: '' }];
     const c = creatives[Math.floor(Math.random() * creatives.length)];
@@ -65,18 +74,25 @@ const Ads = {
   },
 
   finish(completed) {
-    if (!this.active) return;
-    clearInterval(this._timer);
+    if (!this.active) return;             // guards double-finish (no double reward)
+    clearInterval(this._timer); this._timer = null;
     const rewarded = completed && !this.els.skip.disabled; // must have watched fully
     this.els.overlay.classList.add('hidden');
     this.els.skip.innerHTML = 'Skip in <span id="ad-count">5</span>';
     this.els.count = document.getElementById('ad-count');
     this.active = false;
-    if (rewarded && this._onReward) {
-      const coins = this.cfg().rewardCoins || 100;
-      this._onReward(coins);
+    // Restore the pre-ad pause state.
+    if (this._wasPaused !== null && typeof Main !== 'undefined' && Main.game) {
+      Main.game.paused = this._wasPaused;
+      if (typeof UI !== 'undefined' && UI.els && UI.els.btnPause) {
+        UI.els.btnPause.textContent = Main.game.paused ? '▶' : '❚❚';
+      }
     }
+    this._wasPaused = null;
+    // Take the callback before invoking so a re-entrant call can't reuse it.
+    const cb = this._onReward;
     this._onReward = null;
+    if (rewarded && cb) cb(this.cfg().rewardCoins || 100);
   },
 };
 

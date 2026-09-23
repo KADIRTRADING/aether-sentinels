@@ -323,17 +323,42 @@ const UI = {
     });
   },
 
+  // Victory. Rewards are granted exactly once per completed run: `_rewarded`
+  // guards against a repeated 'won' event, and stars never regress on a replay.
   onWon(stars) {
     this.showHud(false);
+    const g = this.game;
+    const mapId = g.map.id;
     const prog = Store.getProgress();
-    prog.stars[this.game.map.id] = Math.max(prog.stars[this.game.map.id] || 0, stars);
-    if (this.game.mapIndex + 2 > prog.unlocked && this.game.mapIndex + 1 < MAPS.length) {
-      prog.unlocked = this.game.mapIndex + 2;
+    const prevStars = prog.stars[mapId] || 0;
+    const firstClear = prevStars === 0;
+    const improved = stars > prevStars;
+
+    if (!g._rewarded) {
+      g._rewarded = true;
+      prog.stars[mapId] = Math.max(prevStars, stars);
+      if (g.mapIndex + 2 > prog.unlocked && g.mapIndex + 1 < MAPS.length) {
+        prog.unlocked = g.mapIndex + 2;
+      }
+      Store.setProgress(prog);
+      // Coin reward: first clear pays more; replays pay a small amount, and an
+      // improved star rating pays the difference. Granted once per run.
+      const base = firstClear ? 60 + mapId * 30 : 15;
+      const starBonus = improved ? (stars - prevStars) * 25 : 0;
+      const coins = base + starBonus;
+      Store.addCoins(coins);
+      this._lastReward = coins;
     }
-    Store.setProgress(prog);
-    const hasNext = this.game.mapIndex + 1 < MAPS.length;
+
+    const hasNext = g.mapIndex + 1 < MAPS.length;
     document.getElementById('result-title').textContent = '★ Victory!';
-    document.getElementById('result-sub').textContent = `${this.game.map.name} cleared with ${stars} star${stars>1?'s':''}. Lives left: ${this.game.lives}`;
+    const starStr = '★'.repeat(stars) + '☆'.repeat(3 - stars);
+    document.getElementById('result-sub').innerHTML =
+      `<b>${g.map.name}</b> cleared &nbsp;<span class="res-stars">${starStr}</span><br>` +
+      `Lives remaining: ${g.lives}/${g.map.lives}` +
+      (this._lastReward ? ` &nbsp;·&nbsp; <b>+${this._lastReward} 🪙</b>` : '') +
+      (improved && !firstClear ? '<br><span class="res-note">New best rating!</span>' : '') +
+      (!improved && !firstClear ? `<br><span class="res-note">Best: ${'★'.repeat(prevStars)}</span>` : '');
     const primary = document.getElementById('result-primary');
     primary.textContent = hasNext ? 'Next Map ›' : 'Map Select';
     primary.dataset.next = hasNext ? '1' : '0';
@@ -341,11 +366,28 @@ const UI = {
   },
   onLost() {
     this.showHud(false);
+    const g = this.game;
+    const reached = g.waveIndex + 1;
     document.getElementById('result-title').textContent = '✖ Defeat';
-    document.getElementById('result-sub').textContent = `The swarm overran your Core on ${this.game.map.name}. Try adjusting your tower mix.`;
+    document.getElementById('result-sub').innerHTML =
+      `The swarm overran your Core on <b>${g.map.name}</b> at wave ${Math.min(reached, g.waves.length)}/${g.waves.length}.<br>` +
+      `<span class="res-note">${this._defeatTip()}</span>`;
     const primary = document.getElementById('result-primary');
     primary.textContent = '↻ Retry';
     primary.dataset.next = 'retry';
     Main.showScreen('screen-result');
+  },
+
+  // Contextual advice based on what the player actually built.
+  _defeatTip() {
+    const g = this.game;
+    const kinds = new Set(g.towers.map(t => t.def.kind));
+    if (g.towers.length <= 4) return 'Tip: build more towers — spend your gold between waves.';
+    if (!kinds.has('aoe-slow')) return 'Tip: a Cryo Node ❄ slows groups so your damage has time to land.';
+    if (!kinds.has('splash')) return 'Tip: add a Mortar 💥 to clear packed swarms.';
+    if (!kinds.has('sniper')) return 'Tip: Railguns 🎯 pierce heavy armor like the Warden.';
+    if (g.towers.every(t => t.tier === 0)) return 'Tip: upgrading a few towers beats building many weak ones.';
+    if (!kinds.has('support')) return 'Tip: an Aegis Pylon ◈ boosts every tower around it.';
+    return 'Tip: use ☄ Orbital Strike and ❄ Cryo Pulse on the boss wave.';
   },
 };

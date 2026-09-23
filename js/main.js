@@ -148,7 +148,9 @@ const Main = {
 
   startLevel(index) {
     Sound.init(); Sound.resume();
+    UI._lastReward = 0;            // clear previous run's reward display
     this.game.loadMap(index);
+    this.applyAccessibility();     // re-apply reduced-motion to the new map
     UI.buildTray();
     // hide all screens
     ['screen-menu', 'screen-levels', 'screen-howto', 'screen-settings', 'screen-result'].forEach(sid =>
@@ -196,6 +198,7 @@ const Main = {
     };
     const onUp = (e) => {
       if (this.currentScreen !== null) return;
+      const wasDragging = !!dragHero;
       isDown = false;
       const p = getPoint(e);
       const tile = this.game.screenToTile(p.x, p.y);
@@ -205,6 +208,9 @@ const Main = {
         this.game.tryMergeHeroes(dragHero);
         dragHero = null;
         this.game.hoverTile = null;
+        // A drag that finishes over a DOM control must not also trigger that
+        // control's click (e.g. dropping a hero on the tray).
+        this._suppressClickUntil = Date.now() + 250;
         UI.refresh();
         return;
       }
@@ -213,14 +219,34 @@ const Main = {
       this.game.hoverTile = null;
     };
 
+    // Swallow the click that immediately follows a hero drag so dropping a hero
+    // over the tray/HUD doesn't also activate that button.
+    document.addEventListener('click', (e) => {
+      if (this._suppressClickUntil && Date.now() < this._suppressClickUntil) {
+        this._suppressClickUntil = 0;
+        e.stopPropagation(); e.preventDefault();
+      }
+    }, true);
+
     // mouse
     canvas.addEventListener('mousedown', onDown);
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
-    // touch
+    // touch — preventDefault stops page scrolling/pull-to-refresh and browser
+    // gestures while playing. Only single-touch is used.
     canvas.addEventListener('touchstart', (e) => { e.preventDefault(); onDown(e); }, { passive: false });
     canvas.addEventListener('touchmove', (e) => { e.preventDefault(); onMove(e); }, { passive: false });
     canvas.addEventListener('touchend', (e) => { e.preventDefault(); onUp(e); }, { passive: false });
+    canvas.addEventListener('touchcancel', (e) => {
+      // e.g. an incoming call or system gesture: cleanly abandon any drag
+      if (dragHero) { dragHero.dragging = false; dragHero = null; }
+      isDown = false; this.game.hoverTile = null; UI.refresh();
+    }, { passive: true });
+    // Losing the pointer outside the window shouldn't leave a hero stuck to it.
+    window.addEventListener('blur', () => {
+      if (dragHero) { dragHero.dragging = false; this.game.tryMergeHeroes(dragHero); dragHero = null; UI.refresh(); }
+      isDown = false;
+    });
   },
 
   handleTap(tile) {
