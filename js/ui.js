@@ -19,6 +19,8 @@ const UI = {
       btnPause: document.getElementById('btn-pause'),
       btnMute: document.getElementById('btn-mute'),
       btnWatchAd: document.getElementById('btn-watch-ad'),
+      nextWave: document.getElementById('stat-next'),
+      nextList: document.querySelector('#stat-next .nw-list'),
       toast: document.getElementById('toast'),
       levelGrid: document.getElementById('level-grid'),
       abilities: document.getElementById('abilities'),
@@ -73,6 +75,34 @@ const UI = {
     this.els.tray.classList.toggle('hidden', !show);
     this.els.abilities.classList.toggle('hidden', !show);
     if (!show) this.els.inspect.classList.add('hidden');
+    if (show) this.syncTrayHeight();
+  },
+
+  // Expose the tray's real height so the docked inspect sheet can sit above it.
+  syncTrayHeight() {
+    const h = this.els.tray && this.els.tray.offsetHeight ? this.els.tray.offsetHeight : 78;
+    document.documentElement.style.setProperty('--tray-h', h + 'px');
+  },
+
+  // True when the inspect panel is CSS-docked (short screens) — in that mode we
+  // must not override its position from JS.
+  isPanelDocked() {
+    return window.matchMedia && window.matchMedia('(max-height: 520px)').matches;
+  },
+
+  // Position the floating panel near a unit while keeping it fully on screen.
+  positionPanel(p, worldX, worldY) {
+    if (this.isPanelDocked()) { p.style.left = ''; p.style.top = ''; return; }
+    const g = this.game;
+    const rect = g.canvas.getBoundingClientRect();
+    const pw = p.offsetWidth || 232, ph = p.offsetHeight || 260;
+    // prefer the right of the unit, flip to the left if it would overflow
+    let x = rect.left + worldX * g.s + g.s * 0.6;
+    if (x + pw > window.innerWidth - 8) x = rect.left + worldX * g.s - pw - g.s * 0.6;
+    let y = rect.top + worldY * g.s - 10;
+    x = U.clamp(x, 8, Math.max(8, window.innerWidth - pw - 8));
+    y = U.clamp(y, 60, Math.max(60, window.innerHeight - ph - 8));
+    p.style.left = x + 'px'; p.style.top = y + 'px';
   },
 
   refreshAbilities() {
@@ -150,6 +180,7 @@ const UI = {
     // start button
     this.els.btnStart.disabled = g.waveActive || g.state !== 'building';
     this.els.btnStart.textContent = g.waves[g.waveIndex] && g.waves[g.waveIndex].isBoss ? '☠ Boss Wave' : 'Start Wave';
+    this.renderNextWave();
     // tray affordability + selection (towers and heroes)
     [...this.els.tray.children].forEach(c => {
       const isHero = c.dataset.kind === 'hero';
@@ -166,6 +197,28 @@ const UI = {
     this.refreshAbilities();
     // advance contextual tutorial when the player performs the taught action
     if (typeof Tutorial !== 'undefined') Tutorial.poll();
+  },
+
+  // Preview of what is coming next, so the player can prepare the right counters
+  // instead of guessing. Hidden while a wave is in progress.
+  renderNextWave() {
+    const g = this.game;
+    const el = this.els.nextWave, list = this.els.nextList;
+    if (!el || !list) return;
+    const wave = g.waves[g.waveIndex];
+    if (!wave || g.waveActive || g.state !== 'building') { el.classList.add('hidden'); return; }
+    el.classList.remove('hidden');
+    // aggregate counts per enemy type, ordered by threat
+    const counts = {};
+    for (const grp of wave.groups) counts[grp.type] = (counts[grp.type] || 0) + grp.count;
+    const entries = Object.keys(counts).sort((a, b) => (ENEMY_THREAT[b] || 99) - (ENEMY_THREAT[a] || 99));
+    list.innerHTML = entries.map(type => {
+      const d = ENEMIES[type];
+      const tip = d.name + (d.armor ? ' · armor ' + d.armor : '') + (d.dodge ? ' · dodges' : '') +
+        (d.heal ? ' · heals allies' : '') + (d.boss ? ' · BOSS' : '');
+      return `<span class="nw-item" title="${tip}"><i style="background:${d.color}"></i>${counts[type]}</span>`;
+    }).join('');
+    if (wave.isBoss) list.innerHTML = `<span class="nw-boss">☠ ${ENEMIES[g.map.bossType].name}</span>` + list.innerHTML;
   },
 
   // shared coin level-up button (works for towers & heroes)
@@ -194,10 +247,12 @@ const UI = {
     p.innerHTML = `<h3 style="color:${h.def.color}">🪖 ${h.def.name} · ${h.def.weapon}</h3>
       <div class="role">${h.def.role}</div>
       <div class="level-row"><span>Level</span><b>${h.level}</b></div>
-      <div class="stat-row"><span>Damage</span><b>${Math.round(h.stats.dmg)}</b></div>
-      <div class="stat-row"><span>Fire Rate</span><b>${rate}/s</b></div>
-      <div class="stat-row"><span>Range</span><b>${h.stats.range.toFixed(1)}</b></div>
-      <div class="stat-row"><span>Health</span><b>${Math.round(h.hp)}/${h.maxHp}</b></div>
+      <div class="stat-grid">
+        <div class="stat-row"><span>Damage</span><b>${Math.round(h.stats.dmg)}</b></div>
+        <div class="stat-row"><span>Rate</span><b>${rate}/s</b></div>
+        <div class="stat-row"><span>Range</span><b>${h.stats.range.toFixed(1)}</b></div>
+        <div class="stat-row"><span>HP</span><b>${Math.round(h.hp)}/${h.maxHp}</b></div>
+      </div>
       ${this.levelUpHtml(h)}
       <button class="target-btn" id="h-target-btn">🎯 Target: <b>${modeLabels[h.targetMode]}</b></button>
       ${mergeHint}
@@ -206,13 +261,7 @@ const UI = {
     const tb = document.getElementById('h-target-btn');
     if (tb) tb.onclick = () => { h.cycleTargetMode(); this.renderHeroInspect(h); };
     document.getElementById('h-sell-btn').onclick = () => { g.sellSelectedUnit(); };
-    // position panel near hero
-    const rect = g.canvas.getBoundingClientRect();
-    let x = rect.left + h.x * g.s + g.s * 0.6;
-    let y = rect.top + h.y * g.s - 10;
-    x = U.clamp(x, 8, window.innerWidth - 248);
-    y = U.clamp(y, 60, window.innerHeight - 280);
-    p.style.left = x + 'px'; p.style.top = y + 'px';
+    this.positionPanel(p, h.x, h.y);
   },
 
   renderInspect(t) {
@@ -222,18 +271,20 @@ const UI = {
     const nt = t.nextTier;
     const b = t.buffs();
     const rng = (t.stats.range + b.rangeAdd).toFixed(1);
-    let statsHtml = `<div class="stat-row"><span>Range</span><b>${rng}</b></div>`;
+    let rows = `<div class="stat-row"><span>Range</span><b>${rng}</b></div>`;
     if (t.def.kind === 'support') {
-      statsHtml += `<div class="stat-row"><span>Dmg Buff</span><b>+${Math.round(t.stats.buffDmg*100)}%</b></div>
+      rows += `<div class="stat-row"><span>Dmg Buff</span><b>+${Math.round(t.stats.buffDmg*100)}%</b></div>
         <div class="stat-row"><span>Rate Buff</span><b>+${Math.round(t.stats.buffRate*100)}%</b></div>`;
     } else {
-      statsHtml += `<div class="stat-row"><span>Damage</span><b>${Math.round((t.stats.dmg||0)*b.dmgMul)}</b></div>`;
-      if (t.def.kind !== 'aoe-slow') statsHtml += `<div class="stat-row"><span>Fire Rate</span><b>${(1/(t.stats.rate/b.rateMul)).toFixed(1)}/s</b></div>`;
-      if (t.stats.chains) statsHtml += `<div class="stat-row"><span>Chains</span><b>${t.stats.chains}</b></div>`;
-      if (t.stats.splash) statsHtml += `<div class="stat-row"><span>Splash</span><b>${t.stats.splash.toFixed(1)}</b></div>`;
-      if (t.stats.slow) statsHtml += `<div class="stat-row"><span>Slow</span><b>${Math.round(t.stats.slow*100)}%</b></div>`;
-      if (t.stats.dot) statsHtml += `<div class="stat-row"><span>Poison</span><b>${t.stats.dot}/s</b></div>`;
+      rows += `<div class="stat-row"><span>Damage</span><b>${Math.round((t.stats.dmg||0)*b.dmgMul)}</b></div>`;
+      if (t.def.kind !== 'aoe-slow') rows += `<div class="stat-row"><span>Rate</span><b>${(1/(t.stats.rate/b.rateMul)).toFixed(1)}/s</b></div>`;
+      if (t.stats.chains) rows += `<div class="stat-row"><span>Chains</span><b>${t.stats.chains}</b></div>`;
+      if (t.stats.splash) rows += `<div class="stat-row"><span>Splash</span><b>${t.stats.splash.toFixed(1)}</b></div>`;
+      if (t.stats.slow) rows += `<div class="stat-row"><span>Slow</span><b>${Math.round(t.stats.slow*100)}%</b></div>`;
+      if (t.stats.dot) rows += `<div class="stat-row"><span>Poison</span><b>${t.stats.dot}/s</b></div>`;
+      if (t.stats.armorMul != null && t.stats.armorMul < 1) rows += `<div class="stat-row"><span>Armor pass</span><b>${Math.round((1-t.stats.armorMul)*100)}%</b></div>`;
     }
+    const statsHtml = `<div class="stat-grid">${rows}</div>`;
 
     let upHtml;
     if (nt) {
@@ -266,14 +317,7 @@ const UI = {
     const targetBtn = document.getElementById('target-btn');
     if (targetBtn) targetBtn.onclick = () => { t.cycleTargetMode(); this.renderInspect(t); };
     document.getElementById('sell-btn').onclick = () => { this.game.sellSelected(); };
-
-    // position near tower but keep on screen
-    const rect = this.game.canvas.getBoundingClientRect();
-    let x = rect.left + t.x * this.game.s + this.game.s * 0.6;
-    let y = rect.top + t.y * this.game.s - 10;
-    x = U.clamp(x, 8, window.innerWidth - 248);
-    y = U.clamp(y, 60, window.innerHeight - 260);
-    p.style.left = x + 'px'; p.style.top = y + 'px';
+    this.positionPanel(p, t.x, t.y);
   },
 
   cycleSpeed() {

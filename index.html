@@ -19,12 +19,17 @@
   <!-- HUD -->
   <div id="hud" class="hidden">
     <div class="hud-left">
-      <div class="stat" id="stat-lives"><span class="ico">❤</span><span class="val">20</span></div>
-      <div class="stat" id="stat-gold"><span class="ico">⬢</span><span class="val">200</span></div>
-      <div class="stat" id="stat-coins"><span class="ico">🪙</span><span class="val">0</span>
-        <button id="btn-watch-ad" class="coin-add" title="Watch ad for coins">+</button>
+      <div class="stat" id="stat-lives" title="Lives — lost when an enemy reaches your Core">
+        <span class="ico">❤</span><span class="val">20</span></div>
+      <div class="stat" id="stat-gold" title="Gold — earned this match, spent on towers and heroes">
+        <span class="ico">⬢</span><span class="val">200</span></div>
+      <div class="stat" id="stat-coins" title="Coins — persist between matches, spent on permanent level-ups">
+        <span class="ico">🪙</span><span class="val">0</span>
+        <button id="btn-watch-ad" class="coin-add" title="Watch a demo rewarded ad for coins (simulated)"
+                aria-label="Watch simulated rewarded ad to earn coins">+</button>
       </div>
-      <div class="stat" id="stat-wave"><span class="ico">≈</span><span class="val">0/0</span></div>
+      <div class="stat" id="stat-wave" title="Wave progress"><span class="ico">≈</span><span class="val">0/0</span></div>
+      <div class="stat next-wave" id="stat-next" title="Enemies in the next wave"><span class="nw-label">NEXT</span><span class="nw-list"></span></div>
     </div>
     <div class="hud-right">
       <button id="btn-mute" class="hud-btn icon" title="Sound (tap game to toggle)">🔊</button>
@@ -128,16 +133,18 @@
     </div>
   </div>
 
-  <!-- Rewarded ad overlay -->
-  <div id="ad-overlay" class="ad-overlay hidden">
+  <!-- Rewarded ad overlay.
+       NOTE: this is a SIMULATED/demo ad flow. No ad SDK or network request is
+       involved; the placeholder below is generated locally. See README. -->
+  <div id="ad-overlay" class="ad-overlay hidden" role="dialog" aria-label="Simulated rewarded ad">
     <div class="ad-card">
-      <div class="ad-label">Advertisement</div>
+      <div class="ad-label">Demo placeholder — not a real ad</div>
       <div class="ad-creative" id="ad-creative">
         <div class="ad-creative-art" id="ad-art"></div>
         <div class="ad-creative-text">
           <div class="ad-title" id="ad-title">AETHER ELITE</div>
           <div class="ad-sub" id="ad-sub">Unlock legendary weapon skins!</div>
-          <button class="ad-cta" id="ad-cta">Install ▸</button>
+          <button class="ad-cta" id="ad-cta">Claim ▸</button>
         </div>
       </div>
       <div class="ad-footer">
@@ -145,6 +152,7 @@
         <button class="ad-skip" id="ad-skip" disabled>Skip in <span id="ad-count">5</span></button>
       </div>
       <div class="ad-progress"><div class="ad-progress-bar" id="ad-progress-bar"></div></div>
+      <div class="ad-disclaimer">Simulated offer for demonstration — no advertising network is connected and no data leaves your device.</div>
     </div>
   </div>
 

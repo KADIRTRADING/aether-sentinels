@@ -11,7 +11,18 @@ const Main = {
     Ads.init();
     this.bindInput(canvas);
     this.bindScreens();
-    window.addEventListener('resize', () => { if (this.game.map) { this.game.resize(); UI.refresh(); } });
+    // Debounced resize/orientation handling: recompute canvas size, tray height
+    // and panel placement. orientationchange fires before the new size is
+    // reported on some Android browsers, hence the extra delayed pass.
+    let resizeTimer = null;
+    const onResize = () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        if (this.game.map) { this.game.resize(); UI.syncTrayHeight(); UI.refresh(); }
+      }, 60);
+    };
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', () => { onResize(); setTimeout(onResize, 350); });
 
     // ensure fresh progress structure exists
     if (!Store.load().progress) Store.setProgress({ unlocked: 1, stars: {} });
