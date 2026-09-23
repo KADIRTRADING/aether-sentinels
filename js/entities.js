@@ -459,3 +459,360 @@ class Tower {
     ctx.globalAlpha = 1;
   }
 }
+
+
+// ---------------- Hero bullet (owned by a hero) ----------------
+class Bullet {
+  constructor(game, x, y, angle, hero) {
+    this.game = game; this.x = x; this.y = y; this.hero = hero;
+    const spec = hero.def.weaponSpec;
+    const spread = spec.spread || 0;
+    this.angle = angle + U.rand(-spread, spread);
+    this.speed = hero.stats.projSpeed || 16;
+    this.vx = Math.cos(this.angle) * this.speed;
+    this.vy = Math.sin(this.angle) * this.speed;
+    this.life = 0.8; this.dead = false;
+    this.rocket = spec.kind === 'rocket';
+    this.tracer = spec.tracer || '#ffe08a';
+    this.color = this.rocket ? hero.def.color : this.tracer;
+    this.r = this.rocket ? 0.16 : 0.07;
+  }
+  update(dt) {
+    this.life -= dt;
+    if (this.life <= 0) { this.dead = true; return; }
+    const px = this.x, py = this.y;
+    this.x += this.vx * dt; this.y += this.vy * dt;
+    if (this.rocket) this.game.particles.burst(px, py, '#ffd0a0', 1, 0.5, 'dot', 0.25, 0.06);
+    // collision vs enemies (segment-ish: check endpoint)
+    for (const e of this.game.enemies) {
+      if (e.dead) continue;
+      if (U.dist(this.x, this.y, e.x, e.y) <= e.r + this.r + 0.05) {
+        this.hero.onBulletHit(e, this.x, this.y);
+        this.dead = true;
+        return;
+      }
+    }
+    // out of bounds
+    if (this.x < -1 || this.y < -1 || this.x > this.game.cols + 1 || this.y > this.game.rows + 1) this.dead = true;
+  }
+  draw(ctx, s) {
+    const px = this.x * s, py = this.y * s;
+    if (this.rocket) {
+      ctx.save(); ctx.translate(px, py); ctx.rotate(this.angle);
+      ctx.fillStyle = this.color; ctx.shadowColor = this.color; ctx.shadowBlur = s * 0.25;
+      ctx.beginPath();
+      ctx.moveTo(s * 0.18, 0); ctx.lineTo(-s * 0.12, -s * 0.09); ctx.lineTo(-s * 0.12, s * 0.09);
+      ctx.closePath(); ctx.fill(); ctx.shadowBlur = 0; ctx.restore();
+    } else {
+      // tracer streak
+      ctx.strokeStyle = this.color; ctx.lineWidth = s * 0.09;
+      ctx.shadowColor = this.color; ctx.shadowBlur = s * 0.2;
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.lineTo(px - this.vx * s * 0.03, py - this.vy * s * 0.03);
+      ctx.stroke(); ctx.shadowBlur = 0;
+    }
+  }
+}
+
+// ---------------- Ejected shell casing (pure visual) ----------------
+class Shell {
+  constructor(x, y, angle) {
+    this.x = x; this.y = y;
+    const a = angle + Math.PI / 2 + U.rand(-0.4, 0.4);
+    const v = U.rand(1.2, 2.4);
+    this.vx = Math.cos(a) * v; this.vy = Math.sin(a) * v - 1;
+    this.life = 0.5; this.max = 0.5; this.rot = Math.random() * 6;
+    this.dead = false;
+  }
+  update(dt) {
+    this.life -= dt; if (this.life <= 0) { this.dead = true; return; }
+    this.x += this.vx * dt; this.y += this.vy * dt;
+    this.vy += 6 * dt; this.vx *= 0.96; this.rot += dt * 12;
+  }
+  draw(ctx, s) {
+    const a = U.clamp(this.life / this.max, 0, 1);
+    ctx.save(); ctx.globalAlpha = a; ctx.translate(this.x * s, this.y * s); ctx.rotate(this.rot);
+    ctx.fillStyle = '#e8c66a';
+    ctx.fillRect(-s * 0.03, -s * 0.06, s * 0.06, s * 0.12);
+    ctx.restore(); ctx.globalAlpha = 1;
+  }
+}
+
+// ---------------- Hero ----------------
+class Hero {
+  constructor(defId, x, y, game) {
+    this.def = HEROES[defId]; this.id = defId; this.game = game;
+    this.x = x; this.y = y;             // free world position (tile units)
+    this.stats = Object.assign({}, this.def.stats);
+    this.maxHp = this.stats.hp; this.hp = this.maxHp;
+    this.angle = -Math.PI / 2; this.cooldown = 0;
+    this.targetMode = 'first';
+    this.recoil = 0; this.barrelSpin = 0; this.spawnAnim = 0.5;
+    this.dragging = false; this.dead = false;
+    this.burstLeft = 0; this.burstTimer = 0; this._target = null;
+    this.mergeGlow = 0;
+    this.totalCost = this.def.cost;
+  }
+
+  cycleTargetMode() {
+    const modes = ['first', 'last', 'strong', 'close'];
+    this.targetMode = modes[(modes.indexOf(this.targetMode) + 1) % modes.length];
+    return this.targetMode;
+  }
+
+  get sellValue() { return Math.floor(this.totalCost * 0.6); }
+
+  pickTarget(range) {
+    let best = null, score = -Infinity;
+    for (const e of this.game.enemies) {
+      if (e.dead) continue;
+      const d2 = U.dist2(this.x, this.y, e.x, e.y);
+      if (d2 > range * range) continue;
+      let sc;
+      switch (this.targetMode) {
+        case 'last':   sc = -e.dist; break;
+        case 'strong': sc = e.hp; break;
+        case 'close':  sc = -d2; break;
+        default:       sc = e.dist; break;
+      }
+      if (sc > score) { score = sc; best = e; }
+    }
+    return best;
+  }
+
+  update(dt) {
+    if (this.spawnAnim > 0) this.spawnAnim -= dt;
+    if (this.recoil > 0) this.recoil -= dt * 5;
+    if (this.mergeGlow > 0) this.mergeGlow -= dt;
+    const spec = this.def.weaponSpec;
+    if (spec.spin) this.barrelSpin += dt * (this.burstLeft > 0 || this.cooldown < this.stats.rate * 0.5 ? 26 : 4);
+
+    if (this.dragging) return; // don't fight while being repositioned
+
+    this.cooldown -= dt;
+    const range = this.stats.range;
+
+    // continue an active burst
+    if (this.burstLeft > 0) {
+      this.burstTimer -= dt;
+      if (this.burstTimer <= 0 && this._target && !this._target.dead) {
+        this.angle = U.angleTo(this.x, this.y, this._target.x, this._target.y);
+        this.shootOnce(this._target);
+        this.burstLeft--;
+        this.burstTimer = spec.burstGap || 0.05;
+      } else if (!this._target || this._target.dead) {
+        this.burstLeft = 0;
+      }
+      return;
+    }
+
+    const target = this.pickTarget(range);
+    if (target) {
+      this.angle = U.approachAngle(this.angle, U.angleTo(this.x, this.y, target.x, target.y), dt * 12);
+      if (this.cooldown <= 0) {
+        this.cooldown = this.stats.rate;
+        this._target = target;
+        const burst = spec.burst || 1;
+        if (burst > 1) { this.burstLeft = burst; this.burstTimer = 0; }
+        else this.shootOnce(target);
+      }
+    }
+  }
+
+  muzzlePos() {
+    const spec = this.def.weaponSpec;
+    const len = spec.barrelLen + 0.15;
+    return { x: this.x + Math.cos(this.angle) * len, y: this.y + Math.sin(this.angle) * len };
+  }
+
+  shootOnce(target) {
+    const spec = this.def.weaponSpec;
+    this.recoil = 1;
+    const m = this.muzzlePos();
+    // muzzle flash particles
+    this.game.particles.burst(m.x, m.y, '#fff2b0', 3, 1.5, 'spark', 0.14, 0.12 * (spec.flash || 0.6));
+    this.game.muzzles.push({ x: m.x, y: m.y, angle: this.angle, life: 0.06, size: spec.flash || 0.6, color: this.def.color });
+    // shell ejection
+    if (spec.shell) this.game.shells.push(new Shell(this.x, this.y, this.angle));
+    Sound.gun(spec.sound);
+
+    if (spec.kind === 'hitscan') {
+      const dmg = this.stats.dmg;
+      target.damage(dmg, { pierce: !!this.stats.pierce });
+      this.game.beams.push({ x1: m.x, y1: m.y, x2: target.x, y2: target.y, life: 0.14, color: spec.beam || this.def.color });
+      this.game.particles.sparks(target.x, target.y, this.def.color, 6);
+      this.game.addFloat(target.x, target.y, Math.round(dmg), this.def.color);
+    } else {
+      this.game.bullets.push(new Bullet(this.game, m.x, m.y, this.angle, this));
+    }
+  }
+
+  onBulletHit(target, hx, hy) {
+    const spec = this.def.weaponSpec;
+    const dmg = this.stats.dmg;
+    if (spec.kind === 'rocket') {
+      // explosive splash
+      Sound.explosion();
+      this.game.shake = 0.4;
+      this.game.particles.burst(hx, hy, '#ffb15e', 24, 5, 'spark', 0.6, 0.2);
+      this.game.particles.ring(hx, hy, '#ffab5e', this.stats.splash);
+      const rad = this.stats.splash;
+      for (const e of this.game.enemies) {
+        if (e.dead) continue;
+        const d = U.dist(hx, hy, e.x, e.y);
+        if (d <= rad) e.damage(dmg * (1 - (d / rad) * 0.5));
+      }
+      this.game.addFloat(hx, hy, Math.round(dmg), '#ffab5e');
+    } else {
+      target.damage(dmg);
+      this.game.particles.burst(hx, hy, this.def.color, 4, 2, 'spark', 0.25, 0.09);
+      this.game.addFloat(hx, hy, Math.round(dmg), this.def.color);
+    }
+  }
+
+  // ---- rendering ----
+  draw(ctx, s) {
+    const px = this.x * s, py = this.y * s;
+    const spawn = this.spawnAnim > 0 ? U.ease(1 - this.spawnAnim / 0.5) : 1;
+
+    // shadow
+    ctx.globalAlpha = 0.3 * spawn; ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.ellipse(px, py + s * 0.32, s * 0.3, s * 0.12, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // merge glow
+    if (this.mergeGlow > 0) {
+      ctx.globalAlpha = this.mergeGlow; ctx.strokeStyle = this.def.color; ctx.lineWidth = s * 0.06;
+      ctx.beginPath(); ctx.arc(px, py, s * 0.5 * (1.6 - this.mergeGlow), 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    // dragging indicator
+    if (this.dragging) {
+      ctx.globalAlpha = 0.15; ctx.fillStyle = this.def.color;
+      ctx.beginPath(); ctx.arc(px, py, this.stats.range * s, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 0.5; ctx.strokeStyle = this.def.color; ctx.lineWidth = s * 0.03;
+      ctx.beginPath(); ctx.arc(px, py, this.stats.range * s, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.scale(spawn, spawn);
+
+    // body base ring (soldier stance)
+    ctx.fillStyle = 'rgba(16,22,40,.92)';
+    ctx.strokeStyle = this.def.color; ctx.lineWidth = s * 0.05;
+    ctx.beginPath(); ctx.arc(0, 0, s * 0.30, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+    // rank chevrons
+    for (let i = 0; i <= this.def.rank && i < 6; i++) {
+      ctx.fillStyle = '#ffcf4d';
+      ctx.beginPath(); ctx.arc(-s * 0.18 + i * s * 0.075, -s * 0.30, s * 0.028, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // weapon (rotated toward target)
+    ctx.save();
+    ctx.rotate(this.angle);
+    const rec = this.recoil > 0 ? this.recoil : 0;
+    this.drawWeapon(ctx, s, rec);
+    ctx.restore();
+
+    // helmet / head on top
+    ctx.fillStyle = this.def.body;
+    ctx.beginPath(); ctx.arc(0, 0, s * 0.16, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = this.def.color;
+    ctx.beginPath(); ctx.arc(0, 0, s * 0.10, 0, Math.PI * 2); ctx.fill();
+
+    ctx.restore();
+
+    // hp bar
+    const frac = U.clamp(this.hp / this.maxHp, 0, 1);
+    if (frac < 1) {
+      const bw = s * 0.62, bh = Math.max(3, s * 0.06), by = py - s * 0.44;
+      ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(px - bw / 2, by, bw, bh);
+      ctx.fillStyle = frac > 0.5 ? '#4dffa1' : frac > 0.25 ? '#ffcf4d' : '#ff5470';
+      ctx.fillRect(px - bw / 2, by, bw * frac, bh);
+    }
+  }
+
+  drawWeapon(ctx, s, rec) {
+    const spec = this.def.weaponSpec;
+    const bl = spec.barrelLen * s, bw = spec.barrelW * s;
+    const back = -rec * s * 0.12; // recoil kickback along barrel
+
+    ctx.save();
+    ctx.translate(back, 0);
+
+    if (spec.stock) { // shoulder stock behind grip
+      ctx.fillStyle = '#2a2f42';
+      ctx.fillRect(-s * 0.18, -bw * 0.35, s * 0.14, bw * 0.7);
+    }
+    // grip / receiver body
+    ctx.fillStyle = this.def.body;
+    ctx.fillRect(-s * 0.06, -bw * 0.6, s * 0.16, bw * 1.2);
+
+    if (spec.spin) {
+      // minigun rotating barrel cluster (draw circle of barrels)
+      const n = spec.barrels || 5, R = bw * 0.34;
+      for (let i = 0; i < n; i++) {
+        const a = this.barrelSpin + (i / n) * Math.PI * 2;
+        const oy = Math.sin(a) * R;
+        const shade = 0.5 + 0.5 * Math.cos(a);
+        ctx.fillStyle = `rgba(${Math.round(120*shade+40)},${Math.round(120*shade+40)},${Math.round(140*shade+50)},1)`;
+        ctx.fillRect(s * 0.06, oy - bw * 0.12, bl, bw * 0.24);
+      }
+      // muzzle housing
+      ctx.fillStyle = '#3a3f55';
+      ctx.fillRect(s * 0.06 + bl, -bw * 0.5, s * 0.05, bw);
+    } else {
+      // single barrel
+      ctx.fillStyle = '#3a3f55';
+      ctx.fillRect(s * 0.06, -bw * 0.5, bl, bw);
+      // muzzle tip
+      ctx.fillStyle = '#20242f';
+      ctx.fillRect(s * 0.06 + bl - s * 0.04, -bw * 0.6, s * 0.05, bw * 1.2);
+    }
+
+    if (spec.kind === 'rocket') { // warhead sticking out
+      ctx.fillStyle = this.def.color;
+      ctx.beginPath();
+      ctx.moveTo(s * 0.06 + bl + s * 0.1, 0);
+      ctx.lineTo(s * 0.06 + bl - s * 0.02, -bw * 0.5);
+      ctx.lineTo(s * 0.06 + bl - s * 0.02, bw * 0.5);
+      ctx.closePath(); ctx.fill();
+    }
+    if (spec.scope) { // sniper scope
+      ctx.fillStyle = '#12151f';
+      ctx.fillRect(s * 0.02, -bw * 1.1, s * 0.14, bw * 0.5);
+      ctx.fillStyle = '#6fe0ff';
+      ctx.beginPath(); ctx.arc(s * 0.02, -bw * 0.85, bw * 0.2, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // muzzle flash (only right after firing)
+    if (rec > 0.6) {
+      const fx = s * 0.06 + bl + s * 0.02;
+      const fs = (spec.flash || 0.6) * s * 0.3 * (rec);
+      ctx.globalAlpha = U.clamp((rec - 0.6) / 0.4, 0, 1);
+      ctx.fillStyle = '#fff2a8';
+      ctx.beginPath();
+      ctx.moveTo(fx, 0);
+      ctx.lineTo(fx + fs, -fs * 0.5);
+      ctx.lineTo(fx + fs * 1.6, 0);
+      ctx.lineTo(fx + fs, fs * 0.5);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#ffd36b';
+      ctx.beginPath(); ctx.arc(fx, 0, fs * 0.5, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+  }
+
+  drawRange(ctx, s) {
+    ctx.globalAlpha = 0.12; ctx.fillStyle = this.def.color;
+    ctx.beginPath(); ctx.arc(this.x * s, this.y * s, this.stats.range * s, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 0.4; ctx.strokeStyle = this.def.color; ctx.lineWidth = s * 0.03;
+    ctx.beginPath(); ctx.arc(this.x * s, this.y * s, this.stats.range * s, 0, Math.PI * 2); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+}

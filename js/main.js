@@ -89,6 +89,7 @@ const Main = {
 
   bindInput(canvas) {
     let downX = 0, downY = 0, moved = false, isDown = false;
+    let dragHero = null;
 
     const getPoint = (e) => {
       if (e.touches && e.touches.length) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
@@ -98,22 +99,41 @@ const Main = {
 
     const onDown = (e) => {
       if (this.currentScreen !== null) return;
-      isDown = true; moved = false;
+      isDown = true; moved = false; dragHero = null;
       const p = getPoint(e); downX = p.x; downY = p.y;
       const tile = this.game.screenToTile(p.x, p.y);
       this.game.hoverTile = tile;
+      // if not in a placement/aiming mode, pressing on a hero begins a drag
+      if (!this.game.selectedBuild && !this.game.selectedHero && !this.game.armedAbility) {
+        const h = this.game.heroAt(tile.fx, tile.fy);
+        if (h) { dragHero = h; h.dragging = true; this.game.selectedUnit = h; this.game.selectedTower = null; Sound.pickup(); UI.refresh(); }
+      }
     };
     const onMove = (e) => {
       if (this.currentScreen !== null) return;
       const p = getPoint(e);
       if (isDown && (Math.abs(p.x - downX) > 8 || Math.abs(p.y - downY) > 8)) moved = true;
-      this.game.hoverTile = this.game.screenToTile(p.x, p.y);
+      const tile = this.game.screenToTile(p.x, p.y);
+      this.game.hoverTile = tile;
+      if (dragHero) {
+        dragHero.x = U.clamp(tile.fx, 0.4, this.game.cols - 0.4);
+        dragHero.y = U.clamp(tile.fy, 0.4, this.game.rows - 0.4);
+      }
     };
     const onUp = (e) => {
       if (this.currentScreen !== null) return;
       isDown = false;
       const p = getPoint(e);
       const tile = this.game.screenToTile(p.x, p.y);
+      if (dragHero) {
+        dragHero.dragging = false;
+        // attempt fusion with an overlapping same-rank hero
+        this.game.tryMergeHeroes(dragHero);
+        dragHero = null;
+        this.game.hoverTile = null;
+        UI.refresh();
+        return;
+      }
       if (moved) { this.game.hoverTile = null; return; }
       this.handleTap(tile);
       this.game.hoverTile = null;
@@ -138,8 +158,17 @@ const Main = {
       UI.refresh();
       return;
     }
+    // Hero deploy mode: place a hero at the tapped point (free placement)
+    if (g.selectedHero) {
+      if (g.deployHero(tile)) {
+        // if can no longer afford, exit deploy mode
+        if (g.gold < HEROES[g.selectedHero].cost) g.selectedHero = null;
+      }
+      UI.refresh();
+      return;
+    }
     if (tile.x < 0 || tile.y < 0 || tile.x >= g.cols || tile.y >= g.rows) {
-      g.selectedTower = null; UI.refresh(); return;
+      g.selectedTower = null; g.selectedUnit = null; UI.refresh(); return;
     }
     // If a build tower is selected from tray, try to place
     if (g.selectedBuild) {
@@ -154,10 +183,14 @@ const Main = {
       UI.refresh();
       return;
     }
+    // tapping a hero selects/inspects it
+    const hero = g.heroAt(tile.fx, tile.fy);
+    if (hero) { g.selectedUnit = hero; g.selectedTower = null; UI.refresh(); return; }
     // otherwise select/inspect a tower
     const t = g.towerAt(tile.x, tile.y);
     g.selectTowerAt(tile.x, tile.y);
     if (!t) { g.selectedTower = null; }
+    g.selectedUnit = null;
     UI.refresh();
   },
 };

@@ -67,11 +67,23 @@ const UI = {
       const def = TOWERS[id];
       const card = document.createElement('div');
       card.className = 'tower-card';
-      card.dataset.id = id;
+      card.dataset.id = id; card.dataset.kind = 'tower';
       card.innerHTML = `<div class="glyph" style="color:${def.color}">${def.glyph}</div>
         <div class="tname">${def.name}</div>
         <div class="tcost">${def.cost} ⬢</div>`;
       card.onclick = () => this.selectBuild(id);
+      this.els.tray.appendChild(card);
+    }
+    // hero roster (buyable base hero). Fusion produces the rest.
+    for (const id of HERO_BUYABLE) {
+      const def = HEROES[id];
+      const card = document.createElement('div');
+      card.className = 'tower-card hero-card';
+      card.dataset.id = id; card.dataset.kind = 'hero';
+      card.innerHTML = `<div class="glyph" style="color:${def.color}">🪖</div>
+        <div class="tname">${def.weapon}</div>
+        <div class="tcost">${def.cost} ⬢</div>`;
+      card.onclick = () => this.selectHero(id);
       this.els.tray.appendChild(card);
     }
     this.refresh();
@@ -80,7 +92,14 @@ const UI = {
   selectBuild(id) {
     const g = this.game;
     if (g.selectedBuild === id) { g.selectedBuild = null; }
-    else { g.selectedBuild = id; g.selectedTower = null; this.els.inspect.classList.add('hidden'); }
+    else { g.selectedBuild = id; g.selectedHero = null; g.selectedTower = null; g.selectedUnit = null; this.els.inspect.classList.add('hidden'); }
+    this.refresh();
+  },
+
+  selectHero(id) {
+    const g = this.game;
+    if (g.selectedHero === id) { g.selectedHero = null; }
+    else { g.selectedHero = id; g.selectedBuild = null; g.selectedTower = null; g.selectedUnit = null; this.els.inspect.classList.add('hidden'); }
     this.refresh();
   },
 
@@ -93,17 +112,51 @@ const UI = {
     // start button
     this.els.btnStart.disabled = g.waveActive || g.state !== 'building';
     this.els.btnStart.textContent = g.waves[g.waveIndex] && g.waves[g.waveIndex].isBoss ? '☠ Boss Wave' : 'Start Wave';
-    // tray affordability + selection
+    // tray affordability + selection (towers and heroes)
     [...this.els.tray.children].forEach(c => {
-      const def = TOWERS[c.dataset.id];
+      const isHero = c.dataset.kind === 'hero';
+      const def = isHero ? HEROES[c.dataset.id] : TOWERS[c.dataset.id];
       c.classList.toggle('cant-afford', g.gold < def.cost);
-      c.classList.toggle('selected', g.selectedBuild === c.dataset.id);
+      const sel = isHero ? (g.selectedHero === c.dataset.id) : (g.selectedBuild === c.dataset.id);
+      c.classList.toggle('selected', sel);
     });
-    // inspect panel
-    if (g.selectedTower) this.renderInspect(g.selectedTower);
+    // inspect panel — hero takes priority when selected
+    if (g.selectedUnit && !g.selectedUnit.dead) this.renderHeroInspect(g.selectedUnit);
+    else if (g.selectedTower) this.renderInspect(g.selectedTower);
     else this.els.inspect.classList.add('hidden');
     // abilities
     this.refreshAbilities();
+  },
+
+  renderHeroInspect(h) {
+    const g = this.game;
+    const p = this.els.inspect;
+    p.classList.remove('hidden');
+    const rate = h.stats.rate > 0 ? (1 / h.stats.rate).toFixed(1) : '—';
+    const modeLabels = { first: 'First', last: 'Last', strong: 'Strongest', close: 'Closest' };
+    const nextName = h.def.mergeTo ? HEROES[h.def.mergeTo].weapon : null;
+    const mergeHint = nextName
+      ? `<div class="up-desc">Drag onto another <b>${h.def.weapon}</b> to fuse → <b>${nextName}</b></div>`
+      : `<div class="up-desc">Max-rank weapon — the apex fusion.</div>`;
+    p.innerHTML = `<h3 style="color:${h.def.color}">🪖 ${h.def.name} · ${h.def.weapon}</h3>
+      <div class="role">${h.def.role}</div>
+      <div class="stat-row"><span>Damage</span><b>${Math.round(h.stats.dmg)}</b></div>
+      <div class="stat-row"><span>Fire Rate</span><b>${rate}/s</b></div>
+      <div class="stat-row"><span>Range</span><b>${h.stats.range.toFixed(1)}</b></div>
+      <div class="stat-row"><span>Health</span><b>${Math.round(h.hp)}/${h.maxHp}</b></div>
+      <button class="target-btn" id="h-target-btn">🎯 Target: <b>${modeLabels[h.targetMode]}</b></button>
+      ${mergeHint}
+      <button class="sell-btn" id="h-sell-btn">Sell (+${h.sellValue} ⬢)</button>`;
+    const tb = document.getElementById('h-target-btn');
+    if (tb) tb.onclick = () => { h.cycleTargetMode(); this.renderHeroInspect(h); };
+    document.getElementById('h-sell-btn').onclick = () => { g.sellSelectedUnit(); };
+    // position panel near hero
+    const rect = g.canvas.getBoundingClientRect();
+    let x = rect.left + h.x * g.s + g.s * 0.6;
+    let y = rect.top + h.y * g.s - 10;
+    x = U.clamp(x, 8, window.innerWidth - 248);
+    y = U.clamp(y, 60, window.innerHeight - 280);
+    p.style.left = x + 'px'; p.style.top = y + 'px';
   },
 
   renderInspect(t) {

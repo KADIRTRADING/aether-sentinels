@@ -20,9 +20,12 @@ class Game {
     this.gold = map.startGold; this.lives = map.lives;
     this.time = 0;
     this.towers = []; this.enemies = []; this.projectiles = []; this.beams = [];
+    this.heroes = []; this.bullets = []; this.shells = []; this.muzzles = [];
     this.particles = new ParticleSystem(); this.floats = [];
     this.waveIndex = 0; this.waveActive = false; this.spawnQueue = [];
     this.selectedBuild = null; // tower id chosen from tray
+    this.selectedHero = null;  // hero id chosen from roster (deploy mode)
+    this.selectedUnit = null;  // placed hero under inspection
     this.selectedTower = null; // placed tower under inspection
     this.hoverTile = null;
     this.state = 'building'; // building | wave | won | lost
@@ -215,6 +218,72 @@ class Game {
     this.emit();
   }
 
+  // ---------- heroes ----------
+  heroAt(fx, fy, ignore) {
+    let best = null, bd = 0.55 * 0.55; // within ~half a tile
+    for (const h of this.heroes) {
+      if (h === ignore || h.dead) continue;
+      const d2 = U.dist2(fx, fy, h.x, h.y);
+      if (d2 <= bd) { bd = d2; best = h; }
+    }
+    return best;
+  }
+
+  deployHero(tile) {
+    if (!this.selectedHero) return false;
+    const def = HEROES[this.selectedHero];
+    if (this.gold < def.cost) { this.toast('Not enough gold'); return false; }
+    const fx = U.clamp(tile.fx, 0.4, this.cols - 0.4);
+    const fy = U.clamp(tile.fy, 0.4, this.rows - 0.4);
+    // don't stack directly on another hero
+    if (this.heroAt(fx, fy)) { this.toast('Too close to another hero'); return false; }
+    this.spendGold(def.cost);
+    const h = new Hero(this.selectedHero, fx, fy, this);
+    this.heroes.push(h);
+    Sound.deploy();
+    this.particles.ring(fx, fy, def.color, 0.7);
+    this.particles.burst(fx, fy, def.color, 12, 3, 'spark', 0.5);
+    return true;
+  }
+
+  // Attempt to fuse `hero` with an overlapping same-rank hero into the next weapon.
+  tryMergeHeroes(hero) {
+    if (!hero || hero.dead) return false;
+    const partner = this.heroes.find(h =>
+      h !== hero && !h.dead && h.id === hero.id &&
+      U.dist(h.x, h.y, hero.x, hero.y) <= 0.6);
+    if (!partner) return false;
+    const nextId = hero.def.mergeTo;
+    if (!nextId) { this.toast(hero.def.weapon + ' is max rank'); return false; }
+    // consume both, create fused hero at the drop position
+    const fx = hero.x, fy = hero.y;
+    this.heroes = this.heroes.filter(h => h !== hero && h !== partner);
+    const fused = new Hero(nextId, fx, fy, this);
+    fused.mergeGlow = 1; fused.spawnAnim = 0.5;
+    // carry a little cost value forward for sell value
+    fused.totalCost = hero.totalCost + partner.totalCost;
+    this.heroes.push(fused);
+    this.selectedUnit = fused;
+    Sound.merge();
+    this.shake = 0.35;
+    this.particles.ring(fx, fy, fused.def.color, 1.2);
+    this.particles.burst(fx, fy, fused.def.color, 28, 4, 'spark', 0.7, 0.18);
+    this.particles.burst(fx, fy, '#ffffff', 14, 3, 'spark', 0.5, 0.12);
+    this.toast('Fused → ' + fused.def.weapon + '!');
+    this.emit();
+    return true;
+  }
+
+  sellSelectedUnit() {
+    if (!this.selectedUnit) return;
+    const h = this.selectedUnit;
+    this.addGold(h.sellValue);
+    this.particles.burst(h.x, h.y, '#ffcf4d', 14, 3, 'spark', 0.5);
+    this.heroes = this.heroes.filter(x => x !== h);
+    this.selectedUnit = null;
+    this.emit();
+  }
+
   // ---------- waves ----------
   startWave() {
     if (this.waveActive || this.state !== 'building') return;
@@ -323,14 +392,21 @@ class Game {
     }
 
     for (const t of this.towers) t.update(dt);
+    for (const h of this.heroes) h.update(dt);
     for (const e of this.enemies) e.update(dt);
     for (const p of this.projectiles) p.update(dt);
+    for (const b of this.bullets) b.update(dt);
+    for (const sh of this.shells) sh.update(dt);
     for (const b of this.beams) b.life -= dt;
+    for (const mz of this.muzzles) mz.life -= dt;
     this.particles.update(dt);
     for (const f of this.floats) f.update(dt);
 
     this.projectiles = this.projectiles.filter(p => !p.dead);
+    this.bullets = this.bullets.filter(b => !b.dead);
+    this.shells = this.shells.filter(sh => !sh.dead);
     this.beams = this.beams.filter(b => b.life > 0);
+    this.muzzles = this.muzzles.filter(mz => mz.life > 0);
     this.floats = this.floats.filter(f => !f.dead);
     const wasEnemies = this.enemies.length;
     this.enemies = this.enemies.filter(e => !e.dead);
@@ -422,8 +498,11 @@ class Game {
 
     // entities
     for (const t of this.towers) t.draw(ctx, s);
+    for (const sh of this.shells) sh.draw(ctx, s);
+    for (const h of this.heroes) h.draw(ctx, s);
     for (const e of this.enemies) e.draw(ctx, s);
     for (const p of this.projectiles) p.draw(ctx, s);
+    for (const b of this.bullets) b.draw(ctx, s);
 
     // beams
     for (const b of this.beams) {
@@ -432,6 +511,27 @@ class Game {
       ctx.shadowColor = b.color; ctx.shadowBlur = s * 0.3;
       ctx.beginPath(); ctx.moveTo(b.x1 * s, b.y1 * s); ctx.lineTo(b.x2 * s, b.y2 * s); ctx.stroke();
       ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+    }
+
+    // muzzle flash glints
+    for (const mz of this.muzzles) {
+      ctx.globalAlpha = U.clamp(mz.life / 0.06, 0, 1);
+      ctx.fillStyle = '#fff2a8'; ctx.shadowColor = mz.color; ctx.shadowBlur = s * 0.4;
+      ctx.beginPath(); ctx.arc(mz.x * s, mz.y * s, s * 0.14 * mz.size, 0, Math.PI * 2); ctx.fill();
+      ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+    }
+
+    // selected hero range + deploy preview
+    if (this.selectedUnit && !this.selectedUnit.dead) this.selectedUnit.drawRange(ctx, s);
+    if (this.selectedHero && this.hoverTile) {
+      const def = HEROES[this.selectedHero];
+      const cx = U.clamp(this.hoverTile.fx, 0.4, this.cols - 0.4) * s;
+      const cy = U.clamp(this.hoverTile.fy, 0.4, this.rows - 0.4) * s;
+      ctx.globalAlpha = 0.12; ctx.fillStyle = def.color;
+      ctx.beginPath(); ctx.arc(cx, cy, def.stats.range * s, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 0.5; ctx.strokeStyle = def.color; ctx.lineWidth = s * 0.04;
+      ctx.beginPath(); ctx.arc(cx, cy, s * 0.3, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = 1;
     }
 
     this.particles.draw(ctx, s);

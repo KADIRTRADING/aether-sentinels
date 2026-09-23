@@ -77,6 +77,62 @@ const TOWERS = {
 
 const TOWER_ORDER = ['arc', 'cryo', 'cannon', 'rail', 'pylon', 'venom'];
 
+// ---------- HERO / WEAPON DEFINITIONS ----------
+// Heroes are draggable soldier units carrying realistic weapons. Dragging two
+// heroes of the SAME rank together fuses them into the next weapon in the chain.
+// weapon spec drives rendering: barrel geometry, fire behavior, muzzle flash,
+// shell ejection, and a distinct gun sound (Sound.gun(<sound>)).
+//
+// rank ladder: 0 pistol -> 1 smg -> 2 rifle -> 3 sniper -> 4 minigun -> 5 rocket
+const HEROES = {
+  pistol: {
+    id: 'pistol', rank: 0, name: 'Recruit', weapon: 'Pistol', glyph: '🔫',
+    color: '#8fd6ff', body: '#3a6ea5', role: 'Sidearm — cheap, reliable single shots',
+    cost: 120, mergeTo: 'smg',
+    stats: { range: 3.0, dmg: 22, rate: 0.55, hp: 120, projSpeed: 16 },
+    weaponSpec: { kind: 'bullet', sound: 'pistol', barrelLen: 0.30, barrelW: 0.09, mag: 0, burst: 1, flash: 0.5, shell: true, tracer: '#ffe08a' },
+  },
+  smg: {
+    id: 'smg', rank: 1, name: 'Trooper', weapon: 'SMG', glyph: '🔫',
+    color: '#7dffcf', body: '#2f8f6b', role: 'Rapid-fire spray — melts light swarms',
+    cost: 0, mergeTo: 'rifle',
+    stats: { range: 3.2, dmg: 16, rate: 0.16, hp: 180, projSpeed: 18 },
+    weaponSpec: { kind: 'bullet', sound: 'smg', barrelLen: 0.36, barrelW: 0.10, burst: 3, burstGap: 0.05, flash: 0.55, shell: true, tracer: '#b6ffe0' },
+  },
+  rifle: {
+    id: 'rifle', rank: 2, name: 'Vanguard', weapon: 'Assault Rifle', glyph: '🔫',
+    color: '#ffd36b', body: '#a5822f', role: 'Balanced automatic — solid all-rounder',
+    cost: 0, mergeTo: 'sniper',
+    stats: { range: 3.9, dmg: 30, rate: 0.28, hp: 300, projSpeed: 22 },
+    weaponSpec: { kind: 'bullet', sound: 'rifle', barrelLen: 0.46, barrelW: 0.12, burst: 3, burstGap: 0.07, flash: 0.7, shell: true, stock: true, tracer: '#ffe08a' },
+  },
+  sniper: {
+    id: 'sniper', rank: 3, name: 'Marksman', weapon: 'Sniper Rifle', glyph: '🎯',
+    color: '#ff9d6b', body: '#8a4a2f', role: 'Hitscan — huge single-target, armor pierce',
+    cost: 0, mergeTo: 'minigun',
+    stats: { range: 6.5, dmg: 180, rate: 1.5, hp: 260, pierce: true },
+    weaponSpec: { kind: 'hitscan', sound: 'sniper', barrelLen: 0.72, barrelW: 0.09, flash: 0.9, scope: true, stock: true, beam: '#ffd0b0' },
+  },
+  minigun: {
+    id: 'minigun', rank: 4, name: 'Juggernaut', weapon: 'Minigun', glyph: '🔥',
+    color: '#ff6b9d', body: '#8a2f52', role: 'Spinning barrels — relentless suppression',
+    cost: 0, mergeTo: 'rocket',
+    stats: { range: 4.2, dmg: 24, rate: 0.07, hp: 520, projSpeed: 24 },
+    weaponSpec: { kind: 'bullet', sound: 'minigun', barrelLen: 0.52, barrelW: 0.20, barrels: 5, spin: true, flash: 0.8, shell: true, spread: 0.10, tracer: '#ffd36b' },
+  },
+  rocket: {
+    id: 'rocket', rank: 5, name: 'Warlord', weapon: 'Rocket Launcher', glyph: '🚀',
+    color: '#ff5470', body: '#8a2f3a', role: 'Explosive splash — apex fusion, clears crowds',
+    cost: 0, mergeTo: null,
+    stats: { range: 5.0, dmg: 140, rate: 1.1, hp: 700, projSpeed: 11, splash: 1.6 },
+    weaponSpec: { kind: 'rocket', sound: 'rocket', barrelLen: 0.62, barrelW: 0.26, flash: 1.0, stock: true, smoke: true },
+  },
+};
+
+// Only the base hero is buyable from the roster; the rest are reached by merging.
+const HERO_ORDER = ['pistol', 'smg', 'rifle', 'sniper', 'minigun', 'rocket'];
+const HERO_BUYABLE = ['pistol'];
+
 // ---------- ENEMY DEFINITIONS ----------
 const ENEMIES = {
   drone:   { name: 'Drone',    hp: 60,   speed: 1.6, gold: 6,  color: '#9fb4ff', r: 0.30, armor: 0 },

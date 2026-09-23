@@ -41,6 +41,22 @@ Verdant Pass (Easy) → Frost Canyon (Normal) → Ember Foundry (Hard) →
 Void Nexus (Extreme). Each has a unique winding path and build-node layout.
 Progress, unlocks, and star ratings are saved to `localStorage`.
 
+### Heroes & weapon fusion
+Deploy **soldier heroes** anywhere on the battlefield (free placement, not tied to
+build nodes). Each carries a detailed, animated weapon — muzzle flashes, ejected
+shell casings, tracer rounds, recoil kickback, and distinct procedural gun audio.
+
+**Drag one hero onto another of the same weapon to fuse them** into the next weapon
+up the ladder:
+
+`Pistol → SMG → Assault Rifle → Sniper Rifle → Minigun → Rocket Launcher`
+
+Each fusion is a bigger, deadlier gun: the SMG sprays bursts, the rifle is a solid
+automatic, the sniper is armor-piercing hitscan, the minigun has spinning barrels,
+and the Rocket Launcher fires explosive splash rounds. Heroes can be tapped to set
+their targeting priority or sold. This adds an active, hands-on layer on top of the
+static tower defense — position your squad and merge on the fly.
+
 ### Targeting priorities
 Every attacking tower can be set to target **First** (closest to core), **Last**
 (earliest on path), **Strongest** (highest HP — great for bosses), or **Closest**

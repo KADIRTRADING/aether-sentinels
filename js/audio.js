@@ -55,6 +55,51 @@ const Sound = {
       default: this.tone(700, 0.08, 'triangle', 0.18);
     }
   },
+  // ---- Gun / weapon effects (procedural, punchy) ----
+  gun(kind) {
+    if (!this.enabled || !this.ctx || this.muted) return;
+    switch (kind) {
+      case 'pistol':
+        // sharp crack + short low thump
+        this.noise(0.06, 0.5, 2600); this.tone(220, 0.06, 'square', 0.22, 90);
+        break;
+      case 'smg':
+        // light, fast tick
+        this.noise(0.035, 0.32, 3200); this.tone(320, 0.03, 'square', 0.14, 160);
+        break;
+      case 'rifle':
+        // meatier report with a bit of body
+        this.noise(0.07, 0.5, 2200); this.tone(180, 0.08, 'square', 0.24, 70);
+        break;
+      case 'sniper':
+        // big crack + long tail boom
+        this.noise(0.12, 0.7, 1600); this.tone(140, 0.28, 'sawtooth', 0.32, 45);
+        this.tone(1800, 0.05, 'square', 0.18, 400);
+        break;
+      case 'minigun':
+        // dense buzzy burst
+        this.noise(0.03, 0.4, 3800); this.tone(140, 0.04, 'sawtooth', 0.16, 90);
+        break;
+      case 'rocket':
+        // whoosh launch
+        this.noise(0.3, 0.5, 900); this.tone(90, 0.32, 'sawtooth', 0.3, 260);
+        break;
+      default:
+        this.noise(0.05, 0.4, 2600);
+    }
+  },
+  explosion() {
+    if (!this.enabled || !this.ctx || this.muted) return;
+    this.noise(0.35, 0.85, 700); this.tone(70, 0.4, 'sawtooth', 0.4, 30);
+    this.tone(130, 0.25, 'square', 0.25, 50);
+  },
+  merge() {
+    // rising triumphant sweep for fusion
+    [392, 523, 659, 880, 1046].forEach((f, i) => setTimeout(() => this.tone(f, 0.16, 'triangle', 0.28, f * 1.2), i * 55));
+    this.noise(0.2, 0.3, 1400);
+  },
+  deploy() { this.tone(300, 0.09, 'square', 0.24, 500); this.tone(500, 0.1, 'square', 0.2, 720); },
+  pickup() { this.tone(660, 0.06, 'sine', 0.2, 880); },
   build() { this.tone(440, 0.08, 'square', 0.25, 660); this.tone(660, 0.1, 'square', 0.2, 880); },
   upgrade() { this.tone(523, 0.1, 'triangle', 0.25, 784); this.tone(784, 0.12, 'triangle', 0.2, 1046); },
   hitCore() { this.tone(160, 0.25, 'sawtooth', 0.3, 60); this.noise(0.2, 0.3, 300); },

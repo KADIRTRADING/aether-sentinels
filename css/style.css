@@ -62,6 +62,9 @@ canvas#game { display: block; background: #070b14; touch-action: none; }
 }
 .tower-card.selected { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(53,224,208,.4); }
 .tower-card.cant-afford { opacity: .45; }
+.tower-card.hero-card { border-color: rgba(53,224,208,.5); background: linear-gradient(180deg, #16233a, #101a2e); }
+.tower-card.hero-card::after { content: '⚔ FUSE'; position: absolute; top: 3px; right: 4px; font-size: 7px; font-weight: 800; color: var(--accent); letter-spacing: .5px; }
+.tower-card.hero-card.selected { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(53,224,208,.5); }
 .tower-card .glyph { font-size: 24px; line-height: 1; }
 .tower-card .tname { font-size: 11px; font-weight: 700; margin-top: 4px; }
 .tower-card .tcost { font-size: 11px; color: var(--gold); font-weight: 700; margin-top: 2px; }
