@@ -164,6 +164,8 @@ const UI = {
     else this.els.inspect.classList.add('hidden');
     // abilities
     this.refreshAbilities();
+    // advance contextual tutorial when the player performs the taught action
+    if (typeof Tutorial !== 'undefined') Tutorial.poll();
   },
 
   // shared coin level-up button (works for towers & heroes)
@@ -278,11 +280,16 @@ const UI = {
     const speeds = [1, 2, 3];
     const i = speeds.indexOf(this.game.speed);
     this.game.speed = speeds[(i + 1) % speeds.length];
+    this.syncSpeed();
+  },
+  syncSpeed() {
     this.els.btnSpeed.textContent = '▶ ' + this.game.speed + 'x';
+    this.els.btnSpeed.setAttribute('aria-label', 'Game speed ' + this.game.speed + 'x');
   },
   togglePause() {
     this.game.paused = !this.game.paused;
     this.els.btnPause.textContent = this.game.paused ? '▶' : '❚❚';
+    this.els.btnPause.setAttribute('aria-label', this.game.paused ? 'Resume' : 'Pause');
   },
 
   toast(msg) {

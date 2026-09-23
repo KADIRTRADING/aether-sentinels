@@ -18,8 +18,40 @@ const Main = {
 
     UI.buildLevelSelect();
     this.bindSettings();
+    this.bindKeys();
     this.game.start(); // loop runs; screens overlay when not playing
     this.showScreen('screen-menu');
+  },
+
+  // Keyboard shortcuts (desktop comfort + an accessible alternative to taps)
+  bindKeys() {
+    window.addEventListener('keydown', (e) => {
+      // never hijack typing in a form control
+      const tag = (e.target && e.target.tagName) || '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      const k = e.key.toLowerCase();
+      if (k === 'm') { this.tapToggleSound(); e.preventDefault(); return; }
+      if (this.currentScreen !== null) {
+        if (k === 'escape') { this.showScreen('screen-menu'); e.preventDefault(); }
+        return;
+      }
+      switch (k) {
+        case ' ': case 'enter':
+          if (!this.game.waveActive && this.game.state === 'building') { this.game.startWave(); UI.refresh(); }
+          e.preventDefault(); break;
+        case 'p': UI.togglePause(); e.preventDefault(); break;
+        case '1': this.game.speed = 1; UI.syncSpeed(); e.preventDefault(); break;
+        case '2': this.game.speed = 2; UI.syncSpeed(); e.preventDefault(); break;
+        case '3': this.game.speed = 3; UI.syncSpeed(); e.preventDefault(); break;
+        case 'escape':
+          // clear any armed/selected mode
+          this.game.selectedBuild = null; this.game.selectedHero = null;
+          this.game.armedAbility = null; this.game.selectedTower = null; this.game.selectedUnit = null;
+          UI.refresh(); e.preventDefault(); break;
+        case 'q': this.game.armAbility('strike'); UI.refresh(); e.preventDefault(); break;
+        case 'w': this.game.armAbility('freeze'); UI.refresh(); e.preventDefault(); break;
+      }
+    });
   },
 
   bindSettings() {
@@ -54,7 +86,11 @@ const Main = {
         else if (a === 'settings') this.showScreen('screen-settings');
         else if (a === 'back-menu') this.showScreen('screen-menu');
         else if (a === 'back-levels') { UI.buildLevelSelect(); this.showScreen('screen-levels'); }
-        else if (a === 'reset') { Store.reset(); UI.buildLevelSelect(); UI.toast('Progress reset'); }
+        else if (a === 'reset') { Store.reset(); UI.buildLevelSelect(); this.bindSettings(); UI.toast('Progress reset'); }
+        else if (a === 'replay-tutorial') {
+          Store.setSettings({ tutorialDone: false });
+          UI.toast('Tutorial will run on your next battle');
+        }
         else if (a === 'next-or-retry') this.handleResultPrimary(el);
       });
     });
@@ -87,6 +123,8 @@ const Main = {
     UI.showHud(true);
     UI.refresh();
     UI.toast(this.game.map.name + ' — ' + this.game.map.diff);
+    // First-session coaching (no-op once completed)
+    Tutorial.start(this.game);
   },
 
   bindInput(canvas) {
@@ -188,24 +226,24 @@ const Main = {
     // tapping a hero selects/inspects it
     const hero = g.heroAt(tile.fx, tile.fy);
     if (hero) { g.selectedUnit = hero; g.selectedTower = null; UI.refresh(); return; }
-    // otherwise select/inspect a tower
+    // otherwise select/inspect a tower (tapping empty ground just deselects)
     const t = g.towerAt(tile.x, tile.y);
-    const hadSelection = g.selectedTower || g.selectedUnit;
     g.selectTowerAt(tile.x, tile.y);
     if (!t) { g.selectedTower = null; }
     g.selectedUnit = null;
-    // Tapping empty ground (with nothing selected/deselected) toggles sound.
-    if (!t && !hadSelection) this.tapToggleSound();
     UI.refresh();
   },
 
-  // tap the game field to toggle sound on/off, with a visual flash
+  // Explicit sound toggle (HUD speaker button / keyboard "M").
+  // NOTE: this used to fire when tapping empty battlefield, which silently muted
+  // the game on a mis-tap. It is now only reachable from a real control.
   tapToggleSound() {
     const s = Store.getSettings();
-    s.muted = !s.muted; Store.setSettings(s);
-    Sound.init(); Sound.setMuted(s.muted);
-    if (!s.muted) Sound.pickup && Sound.pickup();
-    this.flashMute(s.muted);
+    const muted = !s.muted;
+    Store.setSettings({ muted });
+    Sound.init(); Sound.setMuted(muted);
+    if (!muted) Sound.pickup && Sound.pickup();
+    this.flashMute(muted);
     UI.refresh();
   },
 

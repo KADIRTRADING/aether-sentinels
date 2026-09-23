@@ -75,13 +75,24 @@
     <h2 class="screen-title">How to Play</h2>
     <div class="howto-body">
       <p><b>Goal:</b> Stop the Aether swarm from reaching your Core. Each leak costs a life.</p>
-      <p><b>Build:</b> Tap a tower in the tray, then tap a build node (⬡) on the map.</p>
-      <p><b>Upgrade:</b> Tap a placed tower to upgrade its path or sell it.</p>
-      <p><b>Strategy:</b> Each tower has a unique role — combine slows, splash, chain-lightning, and buffs. Bosses resist single strategies, so diversify.</p>
-      <p><b>Heroes:</b> Deploy soldier heroes anywhere on the field. <b>Drag one hero onto another of the same weapon</b> to fuse them into a stronger weapon: Pistol → SMG → Rifle → Sniper → Minigun → Rocket Launcher.</p>
-      <p><b>Waves:</b> Press <b>Start Wave</b> to summon. Survive all waves — including the <b>Boss</b> — to win the map.</p>
+      <p><b>Build:</b> Tap a tower card in the tray, then tap a glowing build node (⬡) beside the path.</p>
+      <p><b>Upgrade:</b> Tap a placed tower to upgrade its tier, change its targeting priority, or sell it.</p>
+
+      <p class="howto-sep"><b>Two currencies</b></p>
+      <p><b>⬢ Gold</b> — earned <i>during</i> a battle from kills and cleared waves. Spent on building and upgrading towers and heroes. It resets every match.</p>
+      <p><b>🪙 Coins</b> — <i>persist</i> between matches. Spent to permanently <b>level up</b> a unit (stronger damage/health). Earned by clearing maps or watching a rewarded ad.</p>
+
+      <p class="howto-sep"><b>Units</b></p>
+      <p><b>Towers</b> are fixed to build nodes. Each has a role — chain lightning (half-armor energy), area slow, splash, armor-piercing sniper, support buffs, and armor-ignoring poison. Combine roles: bosses resist single strategies.</p>
+      <p><b>Heroes 🪖</b> deploy anywhere and can be <b>dragged</b> to reposition. <b>Drag one hero onto another of the same weapon</b> to fuse them: Pistol → SMG → Rifle → Sniper → Minigun → Rocket Launcher.</p>
+      <p><b>Abilities:</b> ☄ Orbital Strike (tap to arm, tap the map to fire) and ❄ Cryo Pulse (freezes everything) — both on cooldown.</p>
+      <p><b>Waves:</b> Press <b>Start Wave</b> to summon. Build between waves. Survive all waves — including the <b>Boss</b> — to win.</p>
+      <p class="howto-note">Controls: mouse or touch. Press <b>M</b> to mute, <b>Space</b> to start a wave, <b>P</b> to pause, <b>1/2/3</b> for speed.</p>
     </div>
-    <button class="menu-btn back" data-action="back-menu">‹ Back</button>
+    <div class="menu-buttons">
+      <button class="menu-btn" data-action="replay-tutorial">↻ Replay tutorial</button>
+      <button class="menu-btn back" data-action="back-menu">‹ Back</button>
+    </div>
   </div>
 
   <div id="screen-settings" class="screen hidden">
@@ -141,6 +152,7 @@
 <script src="js/entities.js"></script>
 <script src="js/game.js"></script>
 <script src="js/ads.js"></script>
+<script src="js/tutorial.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/main.js"></script>
 </body>
