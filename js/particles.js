@@ -32,21 +32,43 @@ class Particle {
 }
 
 class ParticleSystem {
-  constructor() { this.list = []; }
+  // MAX caps total live particles so heavy waves can't tank the frame rate.
+  // `intensity` scales spawn counts (0 = none) and is lowered for reduced motion.
+  constructor(max = 420) { this.list = []; this.MAX = max; this.intensity = 1; }
+
+  // In-place compaction: avoids allocating a new array every frame.
   update(dt) {
-    for (const p of this.list) p.update(dt);
-    this.list = this.list.filter(p => !p.dead);
+    const l = this.list;
+    let w = 0;
+    for (let i = 0; i < l.length; i++) {
+      const p = l[i];
+      p.update(dt);
+      if (!p.dead) l[w++] = p;
+    }
+    l.length = w;
   }
-  draw(ctx, s) { for (const p of this.list) p.draw(ctx, s); }
+  draw(ctx, s) { const l = this.list; for (let i = 0; i < l.length; i++) l[i].draw(ctx, s); }
+
+  _room() { return this.MAX - this.list.length; }
+  _count(n) {
+    const scaled = Math.round(n * this.intensity);
+    return Math.max(0, Math.min(scaled, this._room()));
+  }
+
   burst(x, y, color, n = 10, spread = 3, kind = 'dot', life = 0.5, size = 0.12) {
-    for (let i = 0; i < n; i++) {
+    const c = this._count(n);
+    for (let i = 0; i < c; i++) {
       const a = Math.random() * Math.PI * 2, v = U.rand(0.5, spread);
       this.list.push(new Particle(x, y, Math.cos(a) * v, Math.sin(a) * v, U.rand(life * 0.6, life), color, size, kind));
     }
   }
-  ring(x, y, color, size = 0.5) { this.list.push(new Particle(x, y, 0, 0, 0.4, color, size, 'ring')); }
+  ring(x, y, color, size = 0.5) {
+    if (this.intensity <= 0 || this._room() <= 0) return;
+    this.list.push(new Particle(x, y, 0, 0, 0.4, color, size, 'ring'));
+  }
   sparks(x, y, color, n = 6) {
-    for (let i = 0; i < n; i++) {
+    const c = this._count(n);
+    for (let i = 0; i < c; i++) {
       const a = Math.random() * Math.PI * 2, v = U.rand(1, 4);
       this.list.push(new Particle(x, y, Math.cos(a) * v, Math.sin(a) * v - 1, U.rand(0.3, 0.6), color, 0.14, 'spark'));
     }

@@ -30,6 +30,9 @@ class Game {
     this.hoverTile = null;
     this.state = 'building'; // building | wave | won | lost
     this.buildNodes = this.computeBuildNodes();
+    this.buildNodeSet = new Set(this.buildNodes.map(n => n.x + ',' + n.y));
+    this.towerMap = new Map();
+    this.buffEpoch = 0;   // bumped whenever the tower set/stats change
     this.pathTiles = this.computePathTiles();
     // active abilities: cooldown timers (seconds). 0 = ready.
     this.abilities = {
@@ -152,26 +155,56 @@ class Game {
     return nodes;
   }
 
-  isBuildNode(x, y) { return this.buildNodes.some(n => n.x === x && n.y === y); }
-  towerAt(x, y) { return this.towers.find(t => t.tx === x && t.ty === y); }
+  // Remove entries failing `keep` without allocating a new array.
+  static compact(arr, keep) {
+    let w = 0;
+    for (let i = 0; i < arr.length; i++) { const v = arr[i]; if (keep(v)) arr[w++] = v; }
+    arr.length = w;
+  }
+
+  // O(1) lookups: build nodes are a Set of "x,y" keys and occupied tiles are a
+  // Map maintained on build/sell (previously these were O(n) scans executed for
+  // every node every frame during rendering).
+  isBuildNode(x, y) { return this.buildNodeSet.has(x + ',' + y); }
+  towerAt(x, y) { return this.towerMap.get(x + ',' + y) || undefined; }
+  _indexTower(t) { this.towerMap.set(t.tx + ',' + t.ty, t); }
+  _deindexTower(t) { this.towerMap.delete(t.tx + ',' + t.ty); }
 
   // ---------- sizing ----------
+  // Fits the tile grid into the viewport, accounting for the real HUD/tray
+  // heights and iOS/Android safe-area insets (notches, gesture bars) so nothing
+  // important is hidden. Caps devicePixelRatio to keep fill-rate sane on phones.
   resize() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const cssPx = (name, fallback) => {
+      try {
+        const v = getComputedStyle(document.documentElement).getPropertyValue(name);
+        const n = parseFloat(v);
+        return isFinite(n) ? n : fallback;
+      } catch (e) { return fallback; }
+    };
+    const safeTop = cssPx('--safe-top', 0);
+    const safeBottom = cssPx('--safe-bottom', 0);
     const availW = window.innerWidth;
     const availH = window.innerHeight;
-    // fit grid into screen, leave HUD/tray margins
-    const marginTop = 56, marginBottom = 96;
-    const usableH = availH - marginTop - marginBottom;
-    const scaleX = availW / this.cols;
-    const scaleY = usableH / this.rows;
-    this.s = Math.floor(Math.min(scaleX, scaleY));
-    this.s = U.clamp(this.s, 24, 90);
+    // Measure the actual chrome instead of assuming fixed pixel margins.
+    const hudEl = document.getElementById('hud');
+    const trayEl = document.getElementById('tray');
+    const hudH = (hudEl && hudEl.offsetHeight) ? hudEl.offsetHeight : 56;
+    const trayH = (trayEl && trayEl.offsetHeight) ? trayEl.offsetHeight : 96;
+    const marginTop = Math.max(44, hudH) + safeTop;
+    const marginBottom = Math.max(72, trayH) + safeBottom;
+    const usableH = Math.max(120, availH - marginTop - marginBottom);
+    const usableW = Math.max(160, availW - 8);
+    this.s = Math.floor(Math.min(usableW / this.cols, usableH / this.rows));
+    // Lower floor for very small landscape phones so the whole map still fits.
+    this.s = U.clamp(this.s, 18, 90);
     const w = this.cols * this.s, h = this.rows * this.s;
-    this.canvas.width = w * dpr; this.canvas.height = h * dpr;
+    this.canvas.width = Math.round(w * dpr); this.canvas.height = Math.round(h * dpr);
     this.canvas.style.width = w + 'px'; this.canvas.style.height = h + 'px';
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.viewW = w; this.viewH = h;
+    this.dpr = dpr;
   }
 
   // ---------- input mapping ----------
@@ -196,6 +229,8 @@ class Game {
     this.spendGold(def.cost);
     const t = new Tower(this.selectedBuild, tx, ty, this);
     this.towers.push(t);
+    this._indexTower(t);
+    this.buffEpoch++;
     Sound.build();
     this.particles.ring(t.x, t.y, def.color, 0.7);
     this.particles.burst(t.x, t.y, def.color, 12, 3, 'spark', 0.5);
@@ -214,8 +249,12 @@ class Game {
     const t = this.selectedTower;
     this.addGold(t.sellValue);
     this.particles.burst(t.x, t.y, '#ffcf4d', 14, 3, 'spark', 0.5);
-    this.towers = this.towers.filter(x => x !== t);
+    const i = this.towers.indexOf(t);
+    if (i >= 0) this.towers.splice(i, 1);
+    this._deindexTower(t);
+    this.buffEpoch++;
     this.selectedTower = null;
+    Sound.coin && Sound.coin();
     this.emit();
   }
 
@@ -294,6 +333,7 @@ class Game {
     Store.spendCoins(cost);
     unit.level += 1;
     if (unit.recompute) unit.recompute(); else if (unit.applyLevel) unit.applyLevel();
+    this.buffEpoch++;   // stats changed -> invalidate buff caches
     unit.levelPulse = 0.5;
     Sound.upgrade();
     this.particles.ring(unit.x, unit.y, '#35e0d0', 1.0);
@@ -441,25 +481,28 @@ class Game {
       }
     }
 
-    for (const t of this.towers) t.update(dt);
-    for (const h of this.heroes) h.update(dt);
-    for (const e of this.enemies) e.update(dt);
-    for (const p of this.projectiles) p.update(dt);
-    for (const b of this.bullets) b.update(dt);
-    for (const sh of this.shells) sh.update(dt);
-    for (const b of this.beams) b.life -= dt;
-    for (const mz of this.muzzles) mz.life -= dt;
-    this.particles.update(dt);
-    for (const f of this.floats) f.update(dt);
+    // keep particle intensity in sync with the accessibility preference
+    this.particles.intensity = this.reducedMotion ? 0.25 : 1;
 
-    this.projectiles = this.projectiles.filter(p => !p.dead);
-    this.bullets = this.bullets.filter(b => !b.dead);
-    this.shells = this.shells.filter(sh => !sh.dead);
-    this.beams = this.beams.filter(b => b.life > 0);
-    this.muzzles = this.muzzles.filter(mz => mz.life > 0);
-    this.floats = this.floats.filter(f => !f.dead);
-    const wasEnemies = this.enemies.length;
-    this.enemies = this.enemies.filter(e => !e.dead);
+    for (let i = 0; i < this.towers.length; i++) this.towers[i].update(dt);
+    for (let i = 0; i < this.heroes.length; i++) this.heroes[i].update(dt);
+    for (let i = 0; i < this.enemies.length; i++) this.enemies[i].update(dt);
+    for (let i = 0; i < this.projectiles.length; i++) this.projectiles[i].update(dt);
+    for (let i = 0; i < this.bullets.length; i++) this.bullets[i].update(dt);
+    for (let i = 0; i < this.shells.length; i++) this.shells[i].update(dt);
+    for (let i = 0; i < this.beams.length; i++) this.beams[i].life -= dt;
+    for (let i = 0; i < this.muzzles.length; i++) this.muzzles[i].life -= dt;
+    this.particles.update(dt);
+    for (let i = 0; i < this.floats.length; i++) this.floats[i].update(dt);
+
+    // Compact arrays in place rather than allocating six new arrays per frame.
+    Game.compact(this.projectiles, p => !p.dead);
+    Game.compact(this.bullets, b => !b.dead);
+    Game.compact(this.shells, sh => !sh.dead);
+    Game.compact(this.beams, b => b.life > 0);
+    Game.compact(this.muzzles, mz => mz.life > 0);
+    Game.compact(this.floats, f => !f.dead);
+    Game.compact(this.enemies, e => !e.dead);
 
     // wave end check
     if (this.waveActive && this.spawnQueue.length === 0 && this.enemies.length === 0) {
@@ -477,7 +520,8 @@ class Game {
   render() {
     const ctx = this.ctx, s = this.s;
     ctx.save();
-    if (this.shake > 0) {
+    // Screen shake is suppressed entirely when reduced motion is requested.
+    if (this.shake > 0 && !this.reducedMotion) {
       const m = this.shake * s * 0.3;
       ctx.translate(U.rand(-m, m), U.rand(-m, m));
     }

@@ -58,22 +58,56 @@ const Main = {
     const s = Store.getSettings();
     const muteBtn = document.getElementById('set-mute');
     const vol = document.getElementById('set-volume');
-    const syncMute = () => {
-      muteBtn.textContent = s.muted ? 'Off' : 'On';
-      muteBtn.classList.toggle('off', s.muted);
+    const rmBtn = document.getElementById('set-reduced-motion');
+    const hcBtn = document.getElementById('set-contrast');
+
+    const setToggle = (btn, on, onLabel, offLabel) => {
+      btn.textContent = on ? onLabel : offLabel;
+      btn.classList.toggle('off', !on);
+      btn.setAttribute('aria-pressed', String(on));
     };
-    vol.value = Math.round((s.volume != null ? s.volume : 0.32) * 100);
-    syncMute();
+    const syncAll = () => {
+      const cur = Store.getSettings();
+      setToggle(muteBtn, !cur.muted, 'On', 'Off');
+      setToggle(rmBtn, !!cur.reducedMotion, 'On', 'Off');
+      setToggle(hcBtn, !!cur.highContrast, 'On', 'Off');
+      vol.value = Math.round((cur.volume != null ? cur.volume : 0.32) * 100);
+      this.applyAccessibility();
+    };
+
     muteBtn.onclick = () => {
-      s.muted = !s.muted; Store.setSettings(s);
-      Sound.init(); Sound.setMuted(s.muted); syncMute();
-      if (!s.muted) Sound.build();
+      const cur = Store.getSettings();
+      const muted = !cur.muted;
+      Store.setSettings({ muted });
+      Sound.init(); Sound.setMuted(muted); syncAll();
+      if (!muted) Sound.build();
+      UI.refresh();
     };
     vol.oninput = () => {
-      s.volume = vol.value / 100; Store.setSettings(s);
-      Sound.init(); Sound.setVolume(s.volume);
+      const v = vol.value / 100;
+      Store.setSettings({ volume: v, sfxVolume: v });
+      Sound.init(); Sound.setVolume(v);
     };
-    vol.onchange = () => { if (!s.muted) Sound.build(); };
+    vol.onchange = () => { if (!Store.getSettings().muted) Sound.build(); };
+    rmBtn.onclick = () => {
+      Store.setSettings({ reducedMotion: !Store.getSettings().reducedMotion });
+      syncAll();
+    };
+    hcBtn.onclick = () => {
+      Store.setSettings({ highContrast: !Store.getSettings().highContrast });
+      syncAll();
+    };
+    syncAll();
+  },
+
+  // Apply accessibility preferences to the DOM and the renderer.
+  applyAccessibility() {
+    const s = Store.getSettings();
+    const osReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const reduced = !!s.reducedMotion || !!osReduced;
+    document.body.classList.toggle('reduced-motion', reduced);
+    document.body.classList.toggle('high-contrast', !!s.highContrast);
+    if (this.game) this.game.reducedMotion = reduced;
   },
 
   bindScreens() {

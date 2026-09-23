@@ -261,19 +261,29 @@ class Tower {
   get nextTier() { return this.tier < 3 ? this.def.tiers[this.tier] : null; }
   get sellValue() { return Math.floor(this.totalCost * 0.6); }
 
-  // Support buffs from nearby pylons
+  // Support buffs from nearby Aegis Pylons.
+  // Cached per (tower, frame): buffs only change when towers are built/sold or
+  // upgraded, so recomputing for every tower every frame was wasted work. The
+  // cache key is the game's buffEpoch, bumped whenever the tower set changes.
   buffs() {
+    const epoch = this.game.buffEpoch || 0;
+    if (this._buffCache && this._buffEpoch === epoch) return this._buffCache;
     let dmgMul = 1, rateMul = 1, rangeAdd = 0;
-    if (this.def.kind === 'support') return { dmgMul, rateMul, rangeAdd };
-    for (const t of this.game.towers) {
-      if (t.def.kind !== 'support' || t === this) continue;
-      if (U.dist(this.x, this.y, t.x, t.y) <= t.stats.range) {
-        dmgMul += t.stats.buffDmg;
-        rateMul += t.stats.buffRate;
-        rangeAdd += t.stats.buffRange || 0;
+    if (this.def.kind !== 'support') {
+      const towers = this.game.towers;
+      for (let i = 0; i < towers.length; i++) {
+        const t = towers[i];
+        if (t.def.kind !== 'support' || t === this) continue;
+        if (U.dist(this.x, this.y, t.x, t.y) <= t.stats.range) {
+          dmgMul += t.stats.buffDmg;
+          rateMul += t.stats.buffRate;
+          rangeAdd += t.stats.buffRange || 0;
+        }
       }
     }
-    return { dmgMul, rateMul, rangeAdd };
+    this._buffCache = { dmgMul, rateMul, rangeAdd };
+    this._buffEpoch = epoch;
+    return this._buffCache;
   }
 
   upgrade() {
@@ -282,6 +292,7 @@ class Tower {
     this.game.spendGold(nt.cost);
     this.totalCost += nt.cost;
     this.tier++; this.recompute();
+    this.game.buffEpoch = (this.game.buffEpoch || 0) + 1; // stats changed -> invalidate buff caches
     this.pulse = 0.4;
     Sound.upgrade();
     this.game.particles.ring(this.x, this.y, this.def.color, 0.8);

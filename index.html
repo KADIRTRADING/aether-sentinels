@@ -98,15 +98,23 @@
   <div id="screen-settings" class="screen hidden">
     <h2 class="screen-title">Settings</h2>
     <div class="settings-body">
-      <label class="setting-row">
+      <label class="setting-row" for="set-mute">
         <span>Sound</span>
-        <button id="set-mute" class="toggle-btn">On</button>
+        <button id="set-mute" class="toggle-btn" aria-pressed="false">On</button>
       </label>
-      <label class="setting-row">
+      <label class="setting-row" for="set-volume">
         <span>Volume</span>
-        <input id="set-volume" type="range" min="0" max="100" value="32" />
+        <input id="set-volume" type="range" min="0" max="100" value="32" aria-label="Master volume" />
       </label>
-      <p class="settings-note">Tip: place Aegis Pylons ◈ near clusters of towers, and set your Railguns to <b>Strongest</b> target mode to focus bosses.</p>
+      <label class="setting-row" for="set-reduced-motion">
+        <span>Reduced motion</span>
+        <button id="set-reduced-motion" class="toggle-btn off" aria-pressed="false">Off</button>
+      </label>
+      <label class="setting-row" for="set-contrast">
+        <span>High contrast</span>
+        <button id="set-contrast" class="toggle-btn off" aria-pressed="false">Off</button>
+      </label>
+      <p class="settings-note">Reduced motion limits screen shake and particle effects. Tip: place Aegis Pylons ◈ near clusters of towers, and set Railguns to <b>Strongest</b> to focus bosses.</p>
     </div>
     <button class="menu-btn back" data-action="back-menu">‹ Back</button>
   </div>
