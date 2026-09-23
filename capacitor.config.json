@@ -1,0 +1,11 @@
+{
+  "appId": "com.aethersentinels.game",
+  "appName": "Aether Sentinels",
+  "webDir": ".",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "backgroundColor": "#0a0e1a"
+  }
+}

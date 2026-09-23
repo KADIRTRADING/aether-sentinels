@@ -1,0 +1,23 @@
+{
+  "name": "aether-sentinels",
+  "version": "1.1.0",
+  "description": "Aether Sentinels — a strategic HTML5 tower defense game with unique towers, multiple maps, boss levels, and animations. Packaged for Google Play via Capacitor.",
+  "main": "index.html",
+  "scripts": {
+    "serve": "npx --yes http-server . -p 8080 -c-1",
+    "cap:add": "npx cap add android",
+    "cap:sync": "npx cap sync android",
+    "cap:open": "npx cap open android",
+    "android:build": "cd android && ./gradlew assembleRelease",
+    "android:bundle": "cd android && ./gradlew bundleRelease"
+  },
+  "keywords": ["game", "tower-defense", "html5", "canvas", "capacitor", "android"],
+  "license": "MIT",
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.2"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/core": "^6.1.2"
+  }
+}

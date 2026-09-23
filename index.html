@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#0a0e1a" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<title>Aether Sentinels — Tower Defense</title>
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div id="app">
+  <canvas id="game"></canvas>
+
+  <!-- HUD -->
+  <div id="hud" class="hidden">
+    <div class="hud-left">
+      <div class="stat" id="stat-lives"><span class="ico">❤</span><span class="val">20</span></div>
+      <div class="stat" id="stat-gold"><span class="ico">⬢</span><span class="val">200</span></div>
+      <div class="stat" id="stat-wave"><span class="ico">≈</span><span class="val">0/0</span></div>
+    </div>
+    <div class="hud-right">
+      <button id="btn-speed" class="hud-btn">▶ 1x</button>
+      <button id="btn-start-wave" class="hud-btn primary">Start Wave</button>
+      <button id="btn-pause" class="hud-btn">❚❚</button>
+    </div>
+  </div>
+
+  <!-- Active abilities -->
+  <div id="abilities" class="hidden">
+    <button class="ability-btn" id="ab-strike" data-ability="strike" title="Orbital Strike">
+      <span class="ab-glyph">☄</span><span class="ab-cd"></span>
+    </button>
+    <button class="ability-btn" id="ab-freeze" data-ability="freeze" title="Cryo Pulse">
+      <span class="ab-glyph">❄</span><span class="ab-cd"></span>
+    </button>
+  </div>
+
+  <!-- Tower build tray -->
+  <div id="tray" class="hidden"></div>
+
+  <!-- Tower inspect panel -->
+  <div id="inspect" class="panel hidden"></div>
+
+  <!-- Screens -->
+  <div id="screen-menu" class="screen">
+    <div class="title-wrap">
+      <h1 class="game-title">AETHER<span>SENTINELS</span></h1>
+      <p class="subtitle">Strategic Tower Defense</p>
+    </div>
+    <div class="menu-buttons">
+      <button class="menu-btn primary" data-action="play">▶ Campaign</button>
+      <button class="menu-btn" data-action="howto">How to Play</button>
+      <button class="menu-btn" data-action="settings">Settings</button>
+      <button class="menu-btn" data-action="reset">Reset Progress</button>
+    </div>
+    <p class="version">v1.1.0</p>
+  </div>
+
+  <div id="screen-levels" class="screen hidden">
+    <h2 class="screen-title">Select Map</h2>
+    <div id="level-grid"></div>
+    <button class="menu-btn back" data-action="back-menu">‹ Back</button>
+  </div>
+
+  <div id="screen-howto" class="screen hidden">
+    <h2 class="screen-title">How to Play</h2>
+    <div class="howto-body">
+      <p><b>Goal:</b> Stop the Aether swarm from reaching your Core. Each leak costs a life.</p>
+      <p><b>Build:</b> Tap a tower in the tray, then tap a build node (⬡) on the map.</p>
+      <p><b>Upgrade:</b> Tap a placed tower to upgrade its path or sell it.</p>
+      <p><b>Strategy:</b> Each tower has a unique role — combine slows, splash, chain-lightning, and buffs. Bosses resist single strategies, so diversify.</p>
+      <p><b>Waves:</b> Press <b>Start Wave</b> to summon. Survive all waves — including the <b>Boss</b> — to win the map.</p>
+    </div>
+    <button class="menu-btn back" data-action="back-menu">‹ Back</button>
+  </div>
+
+  <div id="screen-settings" class="screen hidden">
+    <h2 class="screen-title">Settings</h2>
+    <div class="settings-body">
+      <label class="setting-row">
+        <span>Sound</span>
+        <button id="set-mute" class="toggle-btn">On</button>
+      </label>
+      <label class="setting-row">
+        <span>Volume</span>
+        <input id="set-volume" type="range" min="0" max="100" value="32" />
+      </label>
+      <p class="settings-note">Tip: place Aegis Pylons ◈ near clusters of towers, and set your Railguns to <b>Strongest</b> target mode to focus bosses.</p>
+    </div>
+    <button class="menu-btn back" data-action="back-menu">‹ Back</button>
+  </div>
+
+  <div id="screen-result" class="screen hidden">
+    <h2 class="screen-title" id="result-title">Victory</h2>
+    <p id="result-sub"></p>
+    <div class="menu-buttons">
+      <button class="menu-btn primary" data-action="next-or-retry" id="result-primary">Next Map ›</button>
+      <button class="menu-btn" data-action="back-levels">Map Select</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+</div>
+
+<script src="js/utils.js"></script>
+<script src="js/data.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/particles.js"></script>
+<script src="js/entities.js"></script>
+<script src="js/game.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
