@@ -164,7 +164,9 @@ const ENEMIES = {
   // through a competent defence and cost 10 lives. HP/armor/resist reduced and
   // Hive Mind's minion spawning is now capped so it can't flood the board.
   // Bosses remain a real threat: they still need focused fire + slows to stop.
-  titan:   { name: 'Aether Titan',  hp: 3400, speed: 0.62, gold: 300, color: '#ff5470', r: 0.7,  armor: 12, boss: true, resist: 0.15 },
+  // The Titan is the first boss a new player ever meets (Verdant Pass), so it is
+  // deliberately the softest: a modest defence should be able to stop it.
+  titan:   { name: 'Aether Titan',  hp: 2400, speed: 0.62, gold: 300, color: '#ff5470', r: 0.7,  armor: 8,  boss: true, resist: 0.10 },
   hivemind:{ name: 'Hive Mind',     hp: 4200, speed: 0.55, gold: 350, color: '#c86bff', r: 0.75, armor: 10, boss: true, resist: 0.12,
              spawns: 'swarm', spawnEvery: 2.6, maxSpawns: 12 },
   colossus:{ name: 'Void Colossus', hp: 6200, speed: 0.5,  gold: 500, color: '#ff3d5e', r: 0.85, armor: 20, boss: true, resist: 0.2, regen: 22 },
@@ -185,28 +187,28 @@ const MAPS = [
     bg: ['#0d2018', '#0a1a14'], pathColor: '#1f3d2e',
     path: makePath([[-1,2],[3,2],[3,7],[8,7],[8,3],[12,3],[12,8],[16,8]]),
     startGold: 280, lives: 20, waves: 10, bossWave: 10, bossType: 'titan',
-    diffScale: 0.85,
+    diffScale: 0.72, bossHpMul: 0.8,
   },
   {
     id: 1, name: 'Frost Canyon', diff: 'Normal', cols: 16, rows: 11,
     bg: ['#0c1626', '#0a1120'], pathColor: '#1c2c48',
     path: makePath([[-1,5],[4,5],[4,1],[9,1],[9,9],[13,9],[13,4],[16,4]]),
     startGold: 260, lives: 20, waves: 12, bossWave: 12, bossType: 'hivemind',
-    diffScale: 1.15,
+    diffScale: 1.15, bossHpMul: 1.0,
   },
   {
     id: 2, name: 'Ember Foundry', diff: 'Hard', cols: 17, rows: 12,
     bg: ['#20120c', '#170c08'], pathColor: '#3d241c',
     path: makePath([[-1,1],[5,1],[5,6],[2,6],[2,10],[10,10],[10,3],[14,3],[14,9],[17,9]]),
     startGold: 260, lives: 18, waves: 14, bossWave: 14, bossType: 'colossus',
-    diffScale: 1.5,
+    diffScale: 1.75, bossHpMul: 1.0,
   },
   {
     id: 3, name: 'Void Nexus', diff: 'Extreme', cols: 18, rows: 12,
     bg: ['#160b26', '#0e0818'], pathColor: '#2c1c48',
     path: makePath([[-1,6],[3,6],[3,2],[7,2],[7,10],[11,10],[11,2],[15,2],[15,7],[18,7]]),
     startGold: 250, lives: 16, waves: 16, bossWave: 16, bossType: 'colossus',
-    diffScale: 1.95,
+    diffScale: 2.45, bossHpMul: 1.45,
   },
 ];
 

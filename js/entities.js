@@ -4,7 +4,10 @@ class Enemy {
   constructor(type, game) {
     const d = ENEMIES[type];
     this.type = type; this.def = d; this.game = game;
-    this.maxHp = d.hp; this.hp = d.hp;
+    // Bosses scale with the map so the same boss type is a stiffer fight on a
+    // harder map (Hard and Extreme share the Void Colossus).
+    const hpMul = (d.boss && game.map && game.map.bossHpMul) ? game.map.bossHpMul : 1;
+    this.maxHp = Math.round(d.hp * hpMul); this.hp = this.maxHp;
     this.baseSpeed = d.speed; this.armor = d.armor || 0;
     this.r = d.r; this.color = d.color; this.gold = d.gold;
     this.boss = !!d.boss;
