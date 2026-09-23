@@ -1,6 +1,6 @@
 {
   "name": "aether-sentinels",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Aether Sentinels — a strategic HTML5 tower defense game with unique towers, multiple maps, boss levels, and animations. Packaged for Google Play via Capacitor.",
   "main": "index.html",
   "scripts": {

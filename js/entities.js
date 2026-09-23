@@ -212,18 +212,33 @@ class Tower {
     this.tx = tx; this.ty = ty; // tile coords
     this.x = tx + 0.5; this.y = ty + 0.5;
     this.tier = 0; // 0 = base, up to 3
+    this.level = 1; // coin-paid level (independent of gold-tier); boosts stats + swaps image
     this.stats = Object.assign({}, this.def.base);
     this.cooldown = 0; this.angle = -Math.PI / 2;
     this.totalCost = this.def.cost;
     this.targetMode = 'first'; // first | last | strong | close
     this.recompute();
-    this.pulse = 0; this.recoil = 0;
+    this.pulse = 0; this.recoil = 0; this.levelPulse = 0;
   }
 
   cycleTargetMode() {
     const modes = ['first', 'last', 'strong', 'close'];
     this.targetMode = modes[(modes.indexOf(this.targetMode) + 1) % modes.length];
     return this.targetMode;
+  }
+
+  // coin level-up: multiply stats and (optionally) swap image
+  levelUpCost() {
+    const lu = (Assets.cfg().levelUp) || { costs: [50], maxLevel: 6 };
+    if (this.level >= (lu.maxLevel || 6)) return null;
+    const costs = lu.costs || [50];
+    return costs[Math.min(this.level - 1, costs.length - 1)];
+  }
+  applyLevel() {
+    const lu = (Assets.cfg().levelUp) || {};
+    const extra = this.level - 1;
+    this._levelDmgMul = 1 + extra * (lu.dmgPerLevel || 0.35);
+    this._levelRateMul = 1 + extra * (lu.ratePerLevel || 0.06);
   }
 
   recompute() {
@@ -233,6 +248,11 @@ class Tower {
       const mod = this.def.tiers[i].mod;
       for (const k in mod) s[k] = (s[k] || 0) + mod[k];
     }
+    // apply coin-level multipliers
+    this.applyLevel();
+    if (s.dmg) s.dmg = Math.round(s.dmg * (this._levelDmgMul || 1));
+    if (s.dot) s.dot = Math.round(s.dot * (this._levelDmgMul || 1));
+    if (s.rate) s.rate = s.rate / (this._levelRateMul || 1);
     this.stats = s;
   }
 
@@ -290,6 +310,7 @@ class Tower {
 
   update(dt) {
     if (this.pulse > 0) this.pulse -= dt;
+    if (this.levelPulse > 0) this.levelPulse -= dt;
     if (this.recoil > 0) this.recoil -= dt * 4;
     const b = this.buffs();
     const range = this.stats.range + b.rangeAdd;
@@ -311,7 +332,7 @@ class Tower {
             hit = true;
           }
         }
-        if (hit) { Sound.shoot('aoe-slow'); this.game.particles.ring(this.x, this.y, this.def.color, range * 0.9); }
+        if (hit) { if (!Assets.playFire(this.id)) Sound.shoot('aoe-slow'); this.game.particles.ring(this.x, this.y, this.def.color, range * 0.9); }
       }
       return;
     }
@@ -329,9 +350,10 @@ class Tower {
 
   fire(target, b) {
     this.recoil = 1; this._buff = b;
+    const customAudio = Assets.playFire(this.id); // custom fire sound overrides built-in
     if (this.def.kind === 'sniper') {
       // hitscan
-      Sound.shoot('sniper');
+      if (!customAudio) Sound.shoot('sniper');
       const dmg = this.stats.dmg * b.dmgMul;
       target.damage(dmg, { pierce: true, bossBonus: this.stats.bossBonus || 0 });
       this.game.beams.push({ x1: this.x, y1: this.y, x2: target.x, y2: target.y, life: 0.15, color: this.def.color });
@@ -339,7 +361,7 @@ class Tower {
       this.game.addFloat(target.x, target.y, Math.round(dmg), '#ff6b9d');
     } else {
       this.game.projectiles.push(new Projectile(this.game, this.x, this.y, target, this));
-      Sound.shoot(this.def.kind);
+      if (!customAudio) Sound.shoot(this.def.kind);
     }
   }
 
@@ -411,40 +433,60 @@ class Tower {
       ctx.globalAlpha = 1;
     }
 
-    // turret
-    ctx.save(); ctx.translate(px, py);
-    if (this.def.kind !== 'support' && this.def.kind !== 'aoe-slow') ctx.rotate(this.angle);
-    const rec = this.recoil > 0 ? this.recoil * s * 0.1 : 0;
-    ctx.fillStyle = this.def.color;
-    if (this.def.kind === 'support') {
-      // rotating diamond
-      ctx.rotate(this.game.time * 1.5);
-      ctx.fillRect(-s * 0.16, -s * 0.16, s * 0.32, s * 0.32);
-    } else if (this.def.kind === 'aoe-slow') {
-      const p = 0.9 + 0.1 * Math.sin(this.game.time * 6);
-      ctx.globalAlpha = 0.9; ctx.beginPath(); ctx.arc(0, 0, s * 0.22 * p, 0, Math.PI * 2); ctx.fill();
-      ctx.globalAlpha = 1;
+    // custom image (per level) overrides the vector turret when available
+    const img = Assets.getImage(this.id, this.level);
+    if (img) {
+      const rec = this.recoil > 0 ? this.recoil * s * 0.06 : 0;
+      ctx.save(); ctx.translate(px, py);
+      if (this.def.kind !== 'support' && this.def.kind !== 'aoe-slow') ctx.rotate(this.angle + Math.PI / 2);
+      const sz = s * 0.8;
+      ctx.drawImage(img, -sz / 2, -sz / 2 - rec, sz, sz);
+      ctx.restore();
     } else {
-      ctx.fillRect(-s * 0.08, -s * 0.34 - rec, s * 0.16, s * 0.34);
-      ctx.beginPath(); ctx.arc(0, 0, s * 0.2, 0, Math.PI * 2); ctx.fill();
-    }
-    ctx.restore();
+      // turret (vector)
+      ctx.save(); ctx.translate(px, py);
+      if (this.def.kind !== 'support' && this.def.kind !== 'aoe-slow') ctx.rotate(this.angle);
+      const rec = this.recoil > 0 ? this.recoil * s * 0.1 : 0;
+      ctx.fillStyle = this.def.color;
+      if (this.def.kind === 'support') {
+        ctx.rotate(this.game.time * 1.5);
+        ctx.fillRect(-s * 0.16, -s * 0.16, s * 0.32, s * 0.32);
+      } else if (this.def.kind === 'aoe-slow') {
+        const p = 0.9 + 0.1 * Math.sin(this.game.time * 6);
+        ctx.globalAlpha = 0.9; ctx.beginPath(); ctx.arc(0, 0, s * 0.22 * p, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 1;
+      } else {
+        ctx.fillRect(-s * 0.08, -s * 0.34 - rec, s * 0.16, s * 0.34);
+        ctx.beginPath(); ctx.arc(0, 0, s * 0.2, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.restore();
 
-    // glyph
-    ctx.globalAlpha = 0.9; ctx.fillStyle = '#fff';
-    ctx.font = `${Math.round(s * 0.34)}px system-ui`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(this.def.glyph, px, py);
-    ctx.textBaseline = 'alphabetic'; ctx.globalAlpha = 1;
+      // glyph (only when no custom art)
+      ctx.globalAlpha = 0.9; ctx.fillStyle = '#fff';
+      ctx.font = `${Math.round(s * 0.34)}px system-ui`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(this.def.glyph, px, py);
+      ctx.textBaseline = 'alphabetic'; ctx.globalAlpha = 1;
+    }
 
     // tier pips
     for (let i = 0; i < this.tier; i++) {
       ctx.fillStyle = '#ffcf4d';
       ctx.beginPath(); ctx.arc(px - s * 0.2 + i * s * 0.16, py + s * 0.34, s * 0.05, 0, Math.PI * 2); ctx.fill();
     }
-    // upgrade pulse
-    if (this.pulse > 0) {
-      ctx.globalAlpha = this.pulse; ctx.strokeStyle = this.def.color; ctx.lineWidth = s * 0.06;
-      ctx.beginPath(); ctx.arc(px, py, s * 0.5 * (1.4 - this.pulse), 0, Math.PI * 2); ctx.stroke();
+    // coin-level badge (top-right)
+    if (this.level > 1) {
+      ctx.fillStyle = '#35e0d0';
+      ctx.beginPath(); ctx.arc(px + s * 0.28, py - s * 0.28, s * 0.15, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#04231f'; ctx.font = `bold ${Math.round(s * 0.18)}px system-ui`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('L' + this.level, px + s * 0.28, py - s * 0.27);
+      ctx.textBaseline = 'alphabetic';
+    }
+    // upgrade / level pulse
+    const pulseAmt = Math.max(this.pulse, this.levelPulse);
+    if (pulseAmt > 0) {
+      ctx.globalAlpha = pulseAmt; ctx.strokeStyle = this.levelPulse > this.pulse ? '#35e0d0' : this.def.color; ctx.lineWidth = s * 0.06;
+      ctx.beginPath(); ctx.arc(px, py, s * 0.5 * (1.4 - pulseAmt), 0, Math.PI * 2); ctx.stroke();
       ctx.globalAlpha = 1;
     }
   }
@@ -544,15 +586,38 @@ class Hero {
   constructor(defId, x, y, game) {
     this.def = HEROES[defId]; this.id = defId; this.game = game;
     this.x = x; this.y = y;             // free world position (tile units)
+    this.level = 1;
     this.stats = Object.assign({}, this.def.stats);
+    this.applyLevel();
     this.maxHp = this.stats.hp; this.hp = this.maxHp;
     this.angle = -Math.PI / 2; this.cooldown = 0;
     this.targetMode = 'first';
     this.recoil = 0; this.barrelSpin = 0; this.spawnAnim = 0.5;
     this.dragging = false; this.dead = false;
     this.burstLeft = 0; this.burstTimer = 0; this._target = null;
-    this.mergeGlow = 0;
+    this.mergeGlow = 0; this.levelPulse = 0;
     this.totalCost = this.def.cost;
+  }
+
+  levelUpCost() {
+    const lu = (Assets.cfg().levelUp) || { costs: [50], maxLevel: 6 };
+    if (this.level >= (lu.maxLevel || 6)) return null;
+    const costs = lu.costs || [50];
+    return costs[Math.min(this.level - 1, costs.length - 1)];
+  }
+  applyLevel() {
+    const lu = (Assets.cfg().levelUp) || {};
+    const extra = this.level - 1;
+    const dmgMul = 1 + extra * (lu.dmgPerLevel || 0.35);
+    const hpMul = 1 + extra * (lu.hpPerLevel || 0.30);
+    const rateMul = 1 + extra * (lu.ratePerLevel || 0.06);
+    const base = this.def.stats;
+    this.stats = Object.assign({}, base);
+    if (base.dmg) this.stats.dmg = Math.round(base.dmg * dmgMul);
+    if (base.hp) this.stats.hp = Math.round(base.hp * hpMul);
+    if (base.rate) this.stats.rate = base.rate / rateMul;
+    // scale current/max hp preserving fraction
+    if (this.maxHp) { const frac = this.hp / this.maxHp; this.maxHp = this.stats.hp; this.hp = Math.round(this.maxHp * frac); }
   }
 
   cycleTargetMode() {
@@ -585,6 +650,7 @@ class Hero {
     if (this.spawnAnim > 0) this.spawnAnim -= dt;
     if (this.recoil > 0) this.recoil -= dt * 5;
     if (this.mergeGlow > 0) this.mergeGlow -= dt;
+    if (this.levelPulse > 0) this.levelPulse -= dt;
     const spec = this.def.weaponSpec;
     if (spec.spin) this.barrelSpin += dt * (this.burstLeft > 0 || this.cooldown < this.stats.rate * 0.5 ? 26 : 4);
 
@@ -635,7 +701,7 @@ class Hero {
     this.game.muzzles.push({ x: m.x, y: m.y, angle: this.angle, life: 0.06, size: spec.flash || 0.6, color: this.def.color });
     // shell ejection
     if (spec.shell) this.game.shells.push(new Shell(this.x, this.y, this.angle));
-    Sound.gun(spec.sound);
+    if (!Assets.playFire(this.id)) Sound.gun(spec.sound);
 
     if (spec.kind === 'hitscan') {
       const dmg = this.stats.dmg;
@@ -700,31 +766,58 @@ class Hero {
     ctx.translate(px, py);
     ctx.scale(spawn, spawn);
 
-    // body base ring (soldier stance)
-    ctx.fillStyle = 'rgba(16,22,40,.92)';
-    ctx.strokeStyle = this.def.color; ctx.lineWidth = s * 0.05;
-    ctx.beginPath(); ctx.arc(0, 0, s * 0.30, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    const img = Assets.getImage(this.id, this.level);
+    if (img) {
+      // custom art rotated toward target (image faces "up" by convention)
+      const rec = this.recoil > 0 ? this.recoil * s * 0.08 : 0;
+      ctx.save();
+      ctx.rotate(this.angle + Math.PI / 2);
+      const sz = s * 0.86;
+      ctx.drawImage(img, -sz / 2, -sz / 2 - rec, sz, sz);
+      ctx.restore();
+    } else {
+      // body base ring (soldier stance)
+      ctx.fillStyle = 'rgba(16,22,40,.92)';
+      ctx.strokeStyle = this.def.color; ctx.lineWidth = s * 0.05;
+      ctx.beginPath(); ctx.arc(0, 0, s * 0.30, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
 
-    // rank chevrons
-    for (let i = 0; i <= this.def.rank && i < 6; i++) {
-      ctx.fillStyle = '#ffcf4d';
-      ctx.beginPath(); ctx.arc(-s * 0.18 + i * s * 0.075, -s * 0.30, s * 0.028, 0, Math.PI * 2); ctx.fill();
+      // rank chevrons
+      for (let i = 0; i <= this.def.rank && i < 6; i++) {
+        ctx.fillStyle = '#ffcf4d';
+        ctx.beginPath(); ctx.arc(-s * 0.18 + i * s * 0.075, -s * 0.30, s * 0.028, 0, Math.PI * 2); ctx.fill();
+      }
+
+      // weapon (rotated toward target)
+      ctx.save();
+      ctx.rotate(this.angle);
+      const rec = this.recoil > 0 ? this.recoil : 0;
+      this.drawWeapon(ctx, s, rec);
+      ctx.restore();
+
+      // helmet / head on top
+      ctx.fillStyle = this.def.body;
+      ctx.beginPath(); ctx.arc(0, 0, s * 0.16, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = this.def.color;
+      ctx.beginPath(); ctx.arc(0, 0, s * 0.10, 0, Math.PI * 2); ctx.fill();
     }
 
-    // weapon (rotated toward target)
-    ctx.save();
-    ctx.rotate(this.angle);
-    const rec = this.recoil > 0 ? this.recoil : 0;
-    this.drawWeapon(ctx, s, rec);
     ctx.restore();
 
-    // helmet / head on top
-    ctx.fillStyle = this.def.body;
-    ctx.beginPath(); ctx.arc(0, 0, s * 0.16, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = this.def.color;
-    ctx.beginPath(); ctx.arc(0, 0, s * 0.10, 0, Math.PI * 2); ctx.fill();
-
-    ctx.restore();
+    // coin-level badge
+    if (this.level > 1) {
+      ctx.fillStyle = '#35e0d0';
+      ctx.beginPath(); ctx.arc(px + s * 0.26, py - s * 0.26, s * 0.14, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#04231f'; ctx.font = `bold ${Math.round(s * 0.16)}px system-ui`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('L' + this.level, px + s * 0.26, py - s * 0.25);
+      ctx.textBaseline = 'alphabetic';
+    }
+    // level-up pulse
+    if (this.levelPulse > 0) {
+      ctx.globalAlpha = this.levelPulse; ctx.strokeStyle = '#35e0d0'; ctx.lineWidth = s * 0.06;
+      ctx.beginPath(); ctx.arc(px, py, s * 0.5 * (1.4 - this.levelPulse), 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
 
     // hp bar
     const frac = U.clamp(this.hp / this.maxHp, 0, 1);

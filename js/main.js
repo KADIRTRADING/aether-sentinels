@@ -4,9 +4,11 @@ const Main = {
   currentScreen: 'screen-menu',
 
   init() {
+    Assets.init(); // load any custom images/audio from assets.config.js
     const canvas = document.getElementById('game');
     this.game = new Game(canvas);
     UI.init(this.game);
+    Ads.init();
     this.bindInput(canvas);
     this.bindScreens();
     window.addEventListener('resize', () => { if (this.game.map) { this.game.resize(); UI.refresh(); } });
@@ -188,10 +190,33 @@ const Main = {
     if (hero) { g.selectedUnit = hero; g.selectedTower = null; UI.refresh(); return; }
     // otherwise select/inspect a tower
     const t = g.towerAt(tile.x, tile.y);
+    const hadSelection = g.selectedTower || g.selectedUnit;
     g.selectTowerAt(tile.x, tile.y);
     if (!t) { g.selectedTower = null; }
     g.selectedUnit = null;
+    // Tapping empty ground (with nothing selected/deselected) toggles sound.
+    if (!t && !hadSelection) this.tapToggleSound();
     UI.refresh();
+  },
+
+  // tap the game field to toggle sound on/off, with a visual flash
+  tapToggleSound() {
+    const s = Store.getSettings();
+    s.muted = !s.muted; Store.setSettings(s);
+    Sound.init(); Sound.setMuted(s.muted);
+    if (!s.muted) Sound.pickup && Sound.pickup();
+    this.flashMute(s.muted);
+    UI.refresh();
+  },
+
+  flashMute(muted) {
+    let el = document.getElementById('mute-flash');
+    if (!el) {
+      el = document.createElement('div'); el.id = 'mute-flash'; el.className = 'mute-flash';
+      document.getElementById('app').appendChild(el);
+    }
+    el.textContent = muted ? '🔇' : '🔊';
+    el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
   },
 };
 

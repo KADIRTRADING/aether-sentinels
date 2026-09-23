@@ -284,6 +284,25 @@ class Game {
     this.emit();
   }
 
+  // ---------- coin level-up (works for both Tower and Hero units) ----------
+  levelUpUnit(unit) {
+    if (!unit) return false;
+    const cost = unit.levelUpCost ? unit.levelUpCost() : null;
+    if (cost == null) { this.toast('Max level'); return false; }
+    if (Store.getCoins() < cost) { this.toast('Not enough coins — watch an ad!'); return false; }
+    Store.spendCoins(cost);
+    unit.level += 1;
+    if (unit.recompute) unit.recompute(); else if (unit.applyLevel) unit.applyLevel();
+    unit.levelPulse = 0.5;
+    Sound.upgrade();
+    this.particles.ring(unit.x, unit.y, '#35e0d0', 1.0);
+    this.particles.burst(unit.x, unit.y, '#35e0d0', 18, 3, 'spark', 0.6);
+    this.particles.burst(unit.x, unit.y, '#ffcf4d', 10, 3, 'spark', 0.5);
+    this.toast(unit.def.name + ' → Level ' + unit.level + '!');
+    this.emit();
+    return true;
+  }
+
   // ---------- waves ----------
   startWave() {
     if (this.waveActive || this.state !== 'building') return;

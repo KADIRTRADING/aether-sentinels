@@ -12,10 +12,13 @@ const UI = {
       inspect: document.getElementById('inspect'),
       lives: document.querySelector('#stat-lives .val'),
       gold: document.querySelector('#stat-gold .val'),
+      coins: document.querySelector('#stat-coins .val'),
       wave: document.querySelector('#stat-wave .val'),
       btnStart: document.getElementById('btn-start-wave'),
       btnSpeed: document.getElementById('btn-speed'),
       btnPause: document.getElementById('btn-pause'),
+      btnMute: document.getElementById('btn-mute'),
+      btnWatchAd: document.getElementById('btn-watch-ad'),
       toast: document.getElementById('toast'),
       levelGrid: document.getElementById('level-grid'),
       abilities: document.getElementById('abilities'),
@@ -26,10 +29,36 @@ const UI = {
     this.els.btnStart.onclick = () => { Sound.resume(); this.game.startWave(); this.refresh(); };
     this.els.btnSpeed.onclick = () => this.cycleSpeed();
     this.els.btnPause.onclick = () => this.togglePause();
+    this.els.btnMute.onclick = () => this.toggleMute();
+    this.els.btnWatchAd.onclick = (e) => { e.stopPropagation(); this.watchAd(); };
     this.els.abStrike.onclick = () => { Sound.resume(); this.game.armAbility('strike'); this.refresh(); };
     this.els.abFreeze.onclick = () => { Sound.resume(); this.game.armAbility('freeze'); this.refresh(); };
 
     game.onEvent = (ev) => this.handleEvent(ev);
+  },
+
+  // ---- coins & ads ----
+  watchAd() {
+    const now = Date.now();
+    const readyAt = Store.getAdReadyAt();
+    if (now < readyAt) { this.toast('Ad ready in ' + Math.ceil((readyAt - now) / 1000) + 's'); return; }
+    Sound.resume();
+    Ads.showRewarded((coins) => {
+      Store.addCoins(coins);
+      const cd = (Assets.cfg().ads && Assets.cfg().ads.cooldownSec) || 30;
+      Store.setAdReadyAt(Date.now() + cd * 1000);
+      Sound.win();
+      this.toast('+' + coins + ' 🪙 earned!');
+      this.refresh();
+    });
+  },
+
+  toggleMute() {
+    const s = Store.getSettings();
+    s.muted = !s.muted; Store.setSettings(s);
+    Sound.init(); Sound.setMuted(s.muted);
+    this.refresh();
+    if (!s.muted) Sound.pickup && Sound.pickup();
   },
 
   handleEvent(ev) {
@@ -108,7 +137,16 @@ const UI = {
     if (!g.map) return;
     this.els.lives.textContent = g.lives;
     this.els.gold.textContent = U.fmt(g.gold);
+    if (this.els.coins) this.els.coins.textContent = U.fmt(Store.getCoins());
     this.els.wave.textContent = `${Math.min(g.waveIndex + (g.waveActive ? 1 : 0), g.waves.length)}/${g.waves.length}`;
+    // mute icon
+    if (this.els.btnMute) this.els.btnMute.textContent = Store.getSettings().muted ? '🔇' : '🔊';
+    // watch-ad cooldown badge
+    if (this.els.btnWatchAd) {
+      const left = Math.ceil((Store.getAdReadyAt() - Date.now()) / 1000);
+      if (left > 0) { this.els.btnWatchAd.classList.add('cooling'); this.els.btnWatchAd.textContent = left + 's'; }
+      else { this.els.btnWatchAd.classList.remove('cooling'); this.els.btnWatchAd.textContent = '+'; }
+    }
     // start button
     this.els.btnStart.disabled = g.waveActive || g.state !== 'building';
     this.els.btnStart.textContent = g.waves[g.waveIndex] && g.waves[g.waveIndex].isBoss ? '☠ Boss Wave' : 'Start Wave';
@@ -128,6 +166,19 @@ const UI = {
     this.refreshAbilities();
   },
 
+  // shared coin level-up button (works for towers & heroes)
+  levelUpHtml(unit) {
+    const cost = unit.levelUpCost ? unit.levelUpCost() : null;
+    if (cost == null) return `<button class="levelup-btn maxed" disabled>★ MAX LEVEL ${unit.level}</button>`;
+    const afford = Store.getCoins() >= cost;
+    return `<button class="levelup-btn" id="levelup-btn" ${afford ? '' : 'disabled'}>
+      <span>⬆ Level ${unit.level} → ${unit.level + 1}</span><span class="lu-cost">${cost} 🪙</span></button>`;
+  },
+  wireLevelUp(unit, rerender) {
+    const btn = document.getElementById('levelup-btn');
+    if (btn) btn.onclick = () => { if (this.game.levelUpUnit(unit)) { this.refresh(); rerender(); } };
+  },
+
   renderHeroInspect(h) {
     const g = this.game;
     const p = this.els.inspect;
@@ -140,13 +191,16 @@ const UI = {
       : `<div class="up-desc">Max-rank weapon — the apex fusion.</div>`;
     p.innerHTML = `<h3 style="color:${h.def.color}">🪖 ${h.def.name} · ${h.def.weapon}</h3>
       <div class="role">${h.def.role}</div>
+      <div class="level-row"><span>Level</span><b>${h.level}</b></div>
       <div class="stat-row"><span>Damage</span><b>${Math.round(h.stats.dmg)}</b></div>
       <div class="stat-row"><span>Fire Rate</span><b>${rate}/s</b></div>
       <div class="stat-row"><span>Range</span><b>${h.stats.range.toFixed(1)}</b></div>
       <div class="stat-row"><span>Health</span><b>${Math.round(h.hp)}/${h.maxHp}</b></div>
+      ${this.levelUpHtml(h)}
       <button class="target-btn" id="h-target-btn">🎯 Target: <b>${modeLabels[h.targetMode]}</b></button>
       ${mergeHint}
       <button class="sell-btn" id="h-sell-btn">Sell (+${h.sellValue} ⬢)</button>`;
+    this.wireLevelUp(h, () => this.renderHeroInspect(h));
     const tb = document.getElementById('h-target-btn');
     if (tb) tb.onclick = () => { h.cycleTargetMode(); this.renderHeroInspect(h); };
     document.getElementById('h-sell-btn').onclick = () => { g.sellSelectedUnit(); };
@@ -197,11 +251,14 @@ const UI = {
 
     p.innerHTML = `<h3 style="color:${t.def.color}">${t.def.glyph} ${t.def.name} ${'★'.repeat(t.tier)}</h3>
       <div class="role">${t.def.role}</div>
+      <div class="level-row"><span>Level</span><b>${t.level}</b><span>Tier</span><b>${t.tier}</b></div>
       ${statsHtml}
+      ${this.levelUpHtml(t)}
       ${targetHtml}
       ${upHtml}
       <button class="sell-btn" id="sell-btn">Sell (+${t.sellValue} ⬢)</button>`;
 
+    this.wireLevelUp(t, () => this.renderInspect(t));
     const upBtn = document.getElementById('up-btn');
     if (upBtn) upBtn.onclick = () => { if (t.upgrade()) this.refresh(); };
     const targetBtn = document.getElementById('target-btn');

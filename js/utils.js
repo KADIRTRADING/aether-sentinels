@@ -45,8 +45,29 @@ const Store = {
     d.settings = s;
     this.save(d);
   },
+  // ---- Coins (persistent meta-currency, separate from in-match gold) ----
+  getCoins() {
+    const d = this.load();
+    return (typeof d.coins === 'number') ? d.coins : 150; // start with a small stipend
+  },
+  setCoins(n) {
+    const d = this.load();
+    d.coins = Math.max(0, Math.floor(n));
+    this.save(d);
+    return d.coins;
+  },
+  addCoins(n) { return this.setCoins(this.getCoins() + n); },
+  spendCoins(n) {
+    const c = this.getCoins();
+    if (c < n) return false;
+    this.setCoins(c - n);
+    return true;
+  },
+  // ---- Ad cooldown timestamp ----
+  getAdReadyAt() { const d = this.load(); return d.adReadyAt || 0; },
+  setAdReadyAt(ts) { const d = this.load(); d.adReadyAt = ts; this.save(d); },
   reset() {
     const d = this.load();
-    this.save({ progress: { unlocked: 1, stars: {} }, settings: d.settings || { muted: false, volume: 0.32 } });
+    this.save({ progress: { unlocked: 1, stars: {} }, settings: d.settings || { muted: false, volume: 0.32 }, coins: 150 });
   }
 };

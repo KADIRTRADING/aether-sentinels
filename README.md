@@ -41,6 +41,43 @@ Verdant Pass (Easy) → Frost Canyon (Normal) → Ember Foundry (Hard) →
 Void Nexus (Extreme). Each has a unique winding path and build-node layout.
 Progress, unlocks, and star ratings are saved to `localStorage`.
 
+### Coins, level-ups & rewarded ads
+A persistent **coin** meta-currency (separate from in-match gold) is saved to
+`localStorage`. Tap the **+** next to the coin counter to watch a **rewarded ad**
+(a professional ad popup with a rotating creative, countdown, and claim button)
+and earn coins. Spend coins to **level up any tower or hero** — tap a unit and
+press the level-up button (e.g. Venom Spire level 1 → 2 = **50 coins**, scaling
+up per level). Higher levels boost damage / fire-rate / health and show a level
+badge; you can also give each level its own image (see below).
+
+> **Real ads:** the ad flow lives in `js/ads.js` and is a self-contained
+> simulation. To ship real rewarded ads on Google Play, replace the body of
+> `Ads.showRewarded()` with your ad SDK call (e.g. AdMob via a Capacitor plugin)
+> and call the reward callback on completion — the rest of the game is unchanged.
+
+### 🎨 Custom skins & sounds — edit one file
+Open **`js/assets.config.js`** and drop in your own image/audio URLs. Change a URL,
+reload the game, and that unit uses your art/sound — no code changes:
+
+```js
+images.venom = [
+  "assets/venom_l1.png",   // Venom Spire at Level 1
+  "assets/venom_l2.png",   // Level 2 (after paying coins)
+  "assets/venom_l3.png",   // Level 3 ...
+];
+audio.venom = "assets/venom_shot.mp3";   // played every time Venom Spire fires
+```
+
+Images are **per level** (an array), so a unit's picture changes as you pay coins
+to level it up. Any unit left blank keeps its built-in vector art / procedural
+sound. Works for all towers (`arc, cryo, cannon, rail, pylon, venom`) and heroes
+(`pistol, smg, rifle, sniper, minigun, rocket`). Level-up costs and ad rewards are
+also configurable in that file.
+
+### 🔊 Tap to mute
+Tap any empty part of the battlefield to toggle sound on/off (with an on-screen
+flash), or use the speaker button in the HUD. The setting persists.
+
 ### Heroes & weapon fusion
 Deploy **soldier heroes** anywhere on the battlefield (free placement, not tied to
 build nodes). Each carries a detailed, animated weapon — muzzle flashes, ejected
@@ -105,9 +142,12 @@ and press **Start Wave**.
 ├── index.html               # App shell (HUD, tray, panels, screens)
 ├── css/style.css            # All styling
 ├── js/
-│   ├── utils.js             # Math helpers + localStorage save system
-│   ├── data.js              # Towers, enemies, maps, wave generation
-│   ├── audio.js             # Procedural WebAudio sound effects
+│   ├── utils.js             # Math helpers + localStorage save (coins, settings, progress)
+│   ├── assets.config.js     # ★ EDIT ME: custom image/audio URLs per unit & level
+│   ├── data.js              # Towers, enemies, heroes, maps, wave generation
+│   ├── audio.js             # Procedural WebAudio sound effects + gun sounds
+│   ├── assetmanager.js      # Loads/caches custom images & audio, hot-reload, fallback
+│   ├── ads.js               # Rewarded-ad flow (simulated; swappable for AdMob)
 │   ├── particles.js         # Particle system + floating text
 │   ├── entities.js          # Enemy, Projectile, Tower classes & mechanics
 │   ├── game.js              # Engine: loop, grid, waves, rendering
