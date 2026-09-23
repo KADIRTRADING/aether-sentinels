@@ -55,6 +55,32 @@ npm run test:browser   # drives index.html in headless Chrome
 **Goal.** Enemies walk the lit path toward your Core. Every leak costs a life;
 lose them all and the run ends. Clear all waves — including the boss — to win.
 
+### The campaign: 100 maps in 10 themed chapters
+
+| Chapter | Biome | Maps | Band |
+|---|---|---|---|
+| 1 Verdant Reach | Forest | 1–10 | Easy |
+| 2 Frost Expanse | Glacier | 11–20 | Normal |
+| 3 Ember Foundry | Volcanic | 21–30 | Normal → Hard |
+| 4 Void Nexus | Void | 31–40 | Hard |
+| 5 Sunken Works | Flooded ruins | 41–50 | Hard → Brutal |
+| 6 Crimson Waste | Desert | 51–60 | Brutal |
+| 7 Spore Hollow | Fungal | 61–70 | Brutal |
+| 8 Iron Bastion | Fortress | 71–80 | Extreme |
+| 9 Aurora Rift | Storm | 81–90 | Extreme |
+| 10 Last Aether | Finale | 91–100 | Nightmare |
+
+Every chapter has its own palette, path styling, animated colour wash and
+decorative props (trees, ice shards, lava vents, runes, ruins, fungus, pipes,
+crystals…). Each of the 100 maps has a **unique seeded path**, previewed as a
+miniature on its level-select card, and its own difficulty step: wave threat
+climbs smoothly from 52 to about 1160, waves per map from 10 to 20, lives taper
+20 → 12, and boss health scales 0.8× → 2.7×.
+
+Difficulty was fitted so the campaign is **hard but winnable throughout**: a
+competent player who upgrades and uses abilities clears every sampled map, most
+of them finishing in the 55–80% lives band (see `npm run audit:campaign`).
+
 ### Two currencies (a common point of confusion, now explained in-game)
 
 | | Earned | Spent on | Persists? |
@@ -72,9 +98,14 @@ lose them all and the run ends. Clear all waves — including the boss — to wi
 | 🎯 **Railgun** | 150 | Long range, **armor-piercing**, bonus vs bosses |
 | ◈ **Aegis Pylon** | 100 | Support — buffs damage/rate/range of nearby towers |
 | ☣ **Venom Spire** | 130 | Poison over time; **ignores armor**, great vs high HP |
+| 🔥 **Pyre Vent** | 100 | Flame **cone** — best DPS/gold but only 2.0 range, place on a corner *(map 4)* |
+| 🌀 **Graviton Well** | 140 | Control — heavy slow plus a periodic **pull that drags enemies backwards** *(map 8)* |
+| 🔆 **Prism Lance** | 190 | Beam that **ramps to 3.4× damage** while locked on one target — the boss answer *(map 14)* |
+| 💠 **Flak Battery** | 160 | Multi-pellet spread; each pellet rolls dodge separately, so it **beats Phantoms** *(map 20)* |
 
-Each has 3 gold upgrade tiers, 6 coin levels, and a targeting priority
-(First / Last / Strongest / Closest).
+Each has 3 gold upgrade tiers, **10 coin levels**, and a targeting priority
+(First / Last / Strongest / Closest). Towers unlock as the campaign progresses
+(shown in italics) so the first map offers a readable six rather than all ten.
 
 ### Enemies — each checks a different part of your build
 
@@ -95,7 +126,8 @@ reposition. **Drag one hero onto another of the same weapon to fuse them:**
 ### Bosses
 
 `Aether Titan` (softest, first boss) · `Hive Mind` (spawns minions, capped) ·
-`Void Colossus` (regenerates; 45% tougher on Extreme). Bosses have damage
+`Void Colossus` (regenerates). Boss health scales per map across the campaign.
+Bosses have damage
 resistance, so a single-strategy defence will not stop them. A boss leak costs
 ~25% of the map's life pool.
 
@@ -142,7 +174,8 @@ css/style.css              All styling incl. safe-area + responsive rules
 js/
   utils.js                 Math helpers, seeded PRNG, versioned save store
   assets.config.js         ★ EDIT ME: custom image/audio URLs per unit & level
-  data.js                  Towers, heroes, enemies, maps, wave generation
+  data.js                  Towers, heroes, enemies, wave generation
+  maps.js                  100-map campaign: chapter themes, seeded paths, decor
   audio.js                 Procedural WebAudio SFX (incl. per-weapon gun sounds)
   assetmanager.js          Loads/caches custom art & audio, falls back to vectors
   ads.js                   Rewarded-ad flow — SIMULATED (see limitations)
@@ -154,7 +187,7 @@ js/
   main.js                  Bootstrap, input (mouse/touch/keys), screen routing
 tools/serve.js             Zero-dependency static server
 test/
-  run-tests.js             38 automated tests  (npm test)
+  run-tests.js             52 automated tests  (npm test)
   harness.js               Loads game logic into Node with browser stubs
   browser-check.mjs        Headless-Chrome integration run
   screenshot.mjs           Visual capture helper
@@ -168,12 +201,14 @@ capacitor.config.json      Android wrapper config
 ## Testing
 
 ```bash
-npm test                 # 38 tests: deterministic rules, balance invariants,
+npm test                 # 52 tests: deterministic rules, balance invariants,
+                         # campaign/chapter integrity, the four new tower kinds,
                          # save migration, reward accounting, regressions
 npm run test:browser     # headless-Chrome run of the real index.html
 npm run audit:balance    # difficulty band + wave threat curves
 npm run audit:perf       # frame cost under heavy load
 npm run audit:dps        # per-tower DPS and DPS-per-gold
+npm run audit:campaign   # samples playthroughs across all 100 maps
 ```
 
 `npm run test:browser` requires a Chrome/Chromium binary at
@@ -184,7 +219,7 @@ differs.
 
 **Desktop browser**
 1. `npm run serve`, open `http://localhost:8080`.
-2. Campaign → Verdant Pass. The tutorial should appear and advance as you
+2. Campaign → pick a chapter from the strip, then a map. The tutorial should appear and advance as you
    select a tower, place it, and inspect it.
 3. Build 3–4 towers, press **Start Wave**; confirm kills, gold gain, and the
    wave-clear bonus toast.

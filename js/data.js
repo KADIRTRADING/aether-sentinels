@@ -81,9 +81,80 @@ const TOWERS = {
     ],
     kind: 'dot'
   },
+
+  // ---- Tier-2 towers (unlocked as the campaign progresses) ----
+  pyre: {
+    id: 'pyre', name: 'Pyre Vent', glyph: '🔥', color: '#ff8a3c',
+    role: 'Short-range flame cone — melts packed swarms, applies burn',
+    cost: 100, unlockAt: 4,
+    // Continuous cone: hits everything in a narrow arc, cheap sustained DPS but
+    // very short reach, so it must be placed right on a corner of the path.
+    // Tuned down hard after measurement: the flame cone hits every enemy in the
+    // arc, so its per-tick damage must be small or it dwarfs every other tower.
+    base: { range: 2.0, dmg: 3.2, rate: 0.22, arc: 0.85, burn: 3, burnDur: 2.0, armorMul: 0.6 },
+    tiers: [
+      { cost: 110, desc: '+1.6 damage, hotter burn', mod: { dmg: 1.6, burn: 2 } },
+      { cost: 190, desc: '+wider cone, +range', mod: { arc: 0.3, range: 0.4, dmg: 1.4 } },
+      { cost: 330, desc: 'Blue flame: +2.5 dmg, burn ignores armor', mod: { dmg: 2.5, burn: 3, armorMul: -0.6 } },
+    ],
+    kind: 'flame'
+  },
+  graviton: {
+    id: 'graviton', name: 'Graviton Well', glyph: '🌀', color: '#a78bff',
+    role: 'Control — heavy slow plus a periodic pull that drags enemies back',
+    cost: 140, unlockAt: 8,
+    // Pure control: almost no damage, but the pull can buy several seconds on a
+    // long path. Stacks powerfully with splash/flame clusters.
+    base: { range: 2.9, dmg: 2, rate: 3.2, slow: 0.5, slowDur: 1.4, pull: 0.55 },
+    tiers: [
+      { cost: 150, desc: 'Stronger pull and slow', mod: { pull: 0.25, slow: 0.08 } },
+      { cost: 250, desc: '+range, faster cycle', mod: { range: 0.5, rate: -0.7 } },
+      { cost: 430, desc: 'Singularity: much stronger pull', mod: { pull: 0.5, slow: 0.07 } },
+    ],
+    kind: 'gravity'
+  },
+  prism: {
+    id: 'prism', name: 'Prism Lance', glyph: '🔆', color: '#6fe0ff',
+    role: 'Focused beam that ramps up the longer it burns one target — anti-boss',
+    cost: 190, unlockAt: 14,
+    // Damage multiplies the longer it stays locked on the same enemy, making it
+    // the premier single-target answer to bosses but poor against swarms.
+    // Tuned down after measurement: it fires ~8x/sec, so base damage must be low.
+    // Its value comes from the ramp against a single long-lived target (bosses),
+    // not from raw throughput against crowds.
+    base: { range: 4.4, dmg: 3.4, rate: 0.12, ramp: 0.13, rampMax: 3.4, pierce: true },
+    tiers: [
+      { cost: 200, desc: '+1.3 base damage, faster ramp', mod: { dmg: 1.3, ramp: 0.05 } },
+      { cost: 320, desc: '+range, higher ramp ceiling', mod: { range: 0.6, rampMax: 1.0 } },
+      { cost: 520, desc: 'Solar focus: +2 dmg, ramp ceiling ×2', mod: { dmg: 2, rampMax: 2.0 } },
+    ],
+    kind: 'beam'
+  },
+  flak: {
+    id: 'flak', name: 'Flak Battery', glyph: '💠', color: '#ffd84d',
+    role: 'Rapid pellet spread — shreds fast Runners and Phantoms',
+    cost: 160, unlockAt: 20,
+    // Fires a spread of pellets; each pellet rolls dodge separately so it is the
+    // reliable answer to Phantoms, and the volume punishes fast light enemies.
+    // Pellet count multiplies output, so per-pellet damage stays modest.
+    base: { range: 3.2, dmg: 5, rate: 0.6, pellets: 4, spread: 0.26 },
+    tiers: [
+      { cost: 170, desc: '+1 pellet, +1.5 damage', mod: { pellets: 1, dmg: 1.5 } },
+      { cost: 280, desc: '+1 pellet, faster cycle', mod: { pellets: 1, rate: -0.12 } },
+      { cost: 470, desc: 'Shrapnel: +2 pellets, +2 damage', mod: { pellets: 2, dmg: 2 } },
+    ],
+    kind: 'flak'
+  },
 };
 
-const TOWER_ORDER = ['arc', 'cryo', 'cannon', 'rail', 'pylon', 'venom'];
+// Display order in the build tray. `unlockAt` on a tower gates it behind map
+// progress so a new player is not shown ten choices at once.
+const TOWER_ORDER = ['arc', 'cryo', 'cannon', 'rail', 'pylon', 'venom', 'pyre', 'graviton', 'prism', 'flak'];
+
+// Towers available to the player given how many maps they have unlocked.
+function unlockedTowers(mapsUnlocked) {
+  return TOWER_ORDER.filter(id => (TOWERS[id].unlockAt || 0) <= mapsUnlocked);
+}
 
 // ---------- HERO / WEAPON DEFINITIONS ----------
 // Heroes are draggable soldier units carrying realistic weapons. Dragging two
@@ -172,45 +243,9 @@ const ENEMIES = {
   colossus:{ name: 'Void Colossus', hp: 6200, speed: 0.5,  gold: 500, color: '#ff3d5e', r: 0.85, armor: 20, boss: true, resist: 0.2, regen: 22 },
 };
 
-// ---------- MAP DEFINITIONS ----------
-// path: array of {x,y} tile centers (integers). Enemies walk from path[0] to last.
-// buildNodes: tiles where towers can be placed.
-// We generate build nodes procedurally around the path per map for variety.
-function makePath(points) { return points.map(p => ({ x: p[0], y: p[1] })); }
-
-// diffScale drives wave threat; startGold/lives/waves are tuned alongside it so
-// the labelled difficulty matches measured difficulty (see test/balance.test.js).
-// Shorter wave counts keep a mobile session brisk (~3–6 min per map).
-const MAPS = [
-  {
-    id: 0, name: 'Verdant Pass', diff: 'Easy', cols: 16, rows: 11,
-    bg: ['#0d2018', '#0a1a14'], pathColor: '#1f3d2e',
-    path: makePath([[-1,2],[3,2],[3,7],[8,7],[8,3],[12,3],[12,8],[16,8]]),
-    startGold: 280, lives: 20, waves: 10, bossWave: 10, bossType: 'titan',
-    diffScale: 0.72, bossHpMul: 0.8,
-  },
-  {
-    id: 1, name: 'Frost Canyon', diff: 'Normal', cols: 16, rows: 11,
-    bg: ['#0c1626', '#0a1120'], pathColor: '#1c2c48',
-    path: makePath([[-1,5],[4,5],[4,1],[9,1],[9,9],[13,9],[13,4],[16,4]]),
-    startGold: 260, lives: 20, waves: 12, bossWave: 12, bossType: 'hivemind',
-    diffScale: 1.15, bossHpMul: 1.0,
-  },
-  {
-    id: 2, name: 'Ember Foundry', diff: 'Hard', cols: 17, rows: 12,
-    bg: ['#20120c', '#170c08'], pathColor: '#3d241c',
-    path: makePath([[-1,1],[5,1],[5,6],[2,6],[2,10],[10,10],[10,3],[14,3],[14,9],[17,9]]),
-    startGold: 260, lives: 18, waves: 14, bossWave: 14, bossType: 'colossus',
-    diffScale: 1.75, bossHpMul: 1.0,
-  },
-  {
-    id: 3, name: 'Void Nexus', diff: 'Extreme', cols: 18, rows: 12,
-    bg: ['#160b26', '#0e0818'], pathColor: '#2c1c48',
-    path: makePath([[-1,6],[3,6],[3,2],[7,2],[7,10],[11,10],[11,2],[15,2],[15,7],[18,7]]),
-    startGold: 250, lives: 16, waves: 16, bossWave: 16, bossType: 'colossus',
-    diffScale: 2.45, bossHpMul: 1.45,
-  },
-];
+// ---------- MAPS ----------
+// The 100-map themed campaign now lives in js/maps.js (loaded before this file
+// is used at runtime, after it for wave generation helpers).
 
 // ---------- WAVE GENERATION ----------
 // Fully deterministic (seeded per map) so difficulty is reproducible and tunable.

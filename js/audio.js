@@ -105,11 +105,53 @@ const Sound = {
   hitCore() { this.tone(160, 0.25, 'sawtooth', 0.3, 60); this.noise(0.2, 0.3, 300); },
   waveStart() { this.tone(330, 0.15, 'sine', 0.25, 440); this.tone(440, 0.15, 'sine', 0.2, 550); },
   bossSpawn() { this.tone(90, 0.6, 'sawtooth', 0.4, 50); this.noise(0.5, 0.35, 200); },
-  win() { [523,659,784,1046].forEach((f,i)=>setTimeout(()=>this.tone(f,0.2,'triangle',0.28),i*120)); },
+  // Victory fanfare: a real triumphant cadence rather than a plain arpeggio.
+  // Brass-like stacked fifths -> rising run -> sustained major chord with a
+  // shimmer on top. Scheduled on the audio clock so it stays in time.
+  win() {
+    if (!this.enabled || !this.ctx || this.muted) return;
+    const t0 = this.ctx.currentTime;
+    const at = (delay, freq, dur, type, vol, slide) => {
+      // schedule a note relative to now using the same envelope as tone()
+      const t = t0 + delay;
+      const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+      o.type = type; o.frequency.setValueAtTime(freq, t);
+      if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(1, slide), t + dur);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(this.master);
+      o.start(t); o.stop(t + dur + 0.03);
+    };
+    // 1. Triple brass hit (tonic + fifth) — the "announcement"
+    [0, 0.16, 0.32].forEach((d, i) => {
+      at(d, 392, 0.17, 'triangle', 0.26);            // G4
+      at(d, 587.33, 0.17, 'triangle', 0.17);         // D5
+      if (i === 2) at(d, 784, 0.2, 'triangle', 0.14); // G5 on the third hit
+    });
+    // 2. Rising run into the resolution
+    [[0.52, 523.25], [0.62, 659.25], [0.72, 784], [0.82, 880]].forEach(([d, f]) =>
+      at(d, f, 0.13, 'square', 0.14));
+    // 3. Sustained major chord (C major add9) — the payoff
+    const hold = 0.98;
+    at(hold, 523.25, 1.25, 'triangle', 0.26);   // C5
+    at(hold, 659.25, 1.25, 'triangle', 0.2);    // E5
+    at(hold, 784, 1.25, 'triangle', 0.18);      // G5
+    at(hold, 1046.5, 1.3, 'sine', 0.16);        // C6
+    at(hold, 1174.7, 1.0, 'sine', 0.08);        // D6 shimmer
+    at(hold, 261.63, 1.35, 'sine', 0.2);        // C4 root underneath
+    // 4. Cymbal-ish shimmer on the downbeat
+    setTimeout(() => this.noise(0.5, 0.16, 6000), Math.round(hold * 1000));
+  },
   lose() { [440,349,262,196].forEach((f,i)=>setTimeout(()=>this.tone(f,0.25,'sawtooth',0.25),i*140)); },
   kill() { this.tone(200, 0.06, 'square', 0.12, 120); },
   bossDown() { this.noise(0.5, 0.5, 400); [392,523,659].forEach((f,i)=>setTimeout(()=>this.tone(f,0.18,'triangle',0.3,f*1.2),i*90)); },
   waveClear() { this.tone(587, 0.12, 'triangle', 0.24, 784); this.tone(880, 0.14, 'triangle', 0.2, 988); },
   error() { this.tone(180, 0.12, 'sawtooth', 0.22, 120); },
   coin() { this.tone(880, 0.05, 'square', 0.18, 1320); this.tone(1320, 0.07, 'square', 0.14, 1760); },
+  // ---- Tier-2 tower voices ----
+  flame() { this.noise(0.1, 0.22, 1100); },
+  gravity() { this.tone(70, 0.3, 'sine', 0.22, 190); this.tone(150, 0.25, 'triangle', 0.12, 60); },
+  beam() { this.tone(1500, 0.09, 'sine', 0.12, 1900); },
+  flak() { this.noise(0.06, 0.4, 3000); this.tone(260, 0.05, 'square', 0.16, 150); },
 };

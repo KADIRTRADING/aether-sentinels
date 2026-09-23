@@ -90,18 +90,32 @@ const UI = {
     return window.matchMedia && window.matchMedia('(max-height: 520px)').matches;
   },
 
-  // Position the floating panel near a unit while keeping it fully on screen.
+  // Position the floating panel without hiding the battlefield.
+  // Preference order: the empty gutter beside the canvas (common on desktop, so
+  // the board is never covered) -> beside the unit -> clamped on screen.
   positionPanel(p, worldX, worldY) {
     if (this.isPanelDocked()) { p.style.left = ''; p.style.top = ''; return; }
     const g = this.game;
     const rect = g.canvas.getBoundingClientRect();
     const pw = p.offsetWidth || 232, ph = p.offsetHeight || 260;
-    // prefer the right of the unit, flip to the left if it would overflow
-    let x = rect.left + worldX * g.s + g.s * 0.6;
-    if (x + pw > window.innerWidth - 8) x = rect.left + worldX * g.s - pw - g.s * 0.6;
-    let y = rect.top + worldY * g.s - 10;
+    const GAP = 10;
+    const gutterRight = window.innerWidth - rect.right;
+    const gutterLeft = rect.left;
+    let x;
+    if (gutterRight >= pw + GAP * 2) {
+      // park it in the right-hand gutter, outside the play area
+      x = rect.right + GAP;
+    } else if (gutterLeft >= pw + GAP * 2) {
+      x = rect.left - pw - GAP;
+    } else {
+      // no gutter (mobile/tall canvas): sit beside the unit, flipping if needed
+      x = rect.left + worldX * g.s + g.s * 0.6;
+      if (x + pw > window.innerWidth - 8) x = rect.left + worldX * g.s - pw - g.s * 0.6;
+    }
+    // vertically track the unit but stay fully visible
+    let y = rect.top + worldY * g.s - ph * 0.35;
     x = U.clamp(x, 8, Math.max(8, window.innerWidth - pw - 8));
-    y = U.clamp(y, 60, Math.max(60, window.innerHeight - ph - 8));
+    y = U.clamp(y, 64, Math.max(64, window.innerHeight - ph - 12));
     p.style.left = x + 'px'; p.style.top = y + 'px';
   },
 
@@ -122,7 +136,12 @@ const UI = {
   buildTray() {
     const g = this.game;
     this.els.tray.innerHTML = '';
-    for (const id of TOWER_ORDER) {
+    // Only show towers the player has unlocked, so map 1 offers a readable set of
+    // six rather than all ten at once. New tools arrive as the campaign advances.
+    const available = (typeof unlockedTowers === 'function')
+      ? unlockedTowers(Math.max(Store.getProgress().unlocked, g.mapIndex + 1))
+      : TOWER_ORDER;
+    for (const id of available) {
       const def = TOWERS[id];
       const card = document.createElement('div');
       card.className = 'tower-card';
@@ -345,26 +364,100 @@ const UI = {
     this.toastTimer = setTimeout(() => t.classList.add('hidden'), 1800);
   },
 
-  // ----- level select -----
+  // ----- level select (100 maps across 10 chapters) -----
+  // Chapter view first, then the 10 maps inside the chosen chapter, so the grid
+  // never becomes an unnavigable wall of 100 cards.
+  selectedChapter: null,
+
   buildLevelSelect() {
+    const prog = Store.getProgress();
+    // Default to the chapter containing the player's current frontier.
+    if (this.selectedChapter == null) {
+      this.selectedChapter = Math.min(CHAPTERS.length - 1, chapterOf(Math.max(0, prog.unlocked - 1)));
+    }
+    // Never display a chapter the player has not reached yet.
+    const maxChapter = chapterOf(Math.max(0, prog.unlocked - 1));
+    this.selectedChapter = U.clamp(this.selectedChapter, 0, maxChapter);
+    this.renderChapterStrip(prog);
+    this.renderChapterMaps(prog);
+  },
+
+  // Horizontal chapter selector with per-chapter star totals.
+  renderChapterStrip(prog) {
+    let strip = document.getElementById('chapter-strip');
+    if (!strip) {
+      strip = document.createElement('div');
+      strip.id = 'chapter-strip'; strip.className = 'chapter-strip';
+      this.els.levelGrid.parentNode.insertBefore(strip, this.els.levelGrid);
+    }
+    strip.innerHTML = '';
+    CHAPTERS.forEach((ch, ci) => {
+      const first = ci * MAPS_PER_CHAPTER;
+      const locked = (first + 1) > prog.unlocked;
+      let stars = 0;
+      for (let k = 0; k < MAPS_PER_CHAPTER; k++) stars += (prog.stars[first + k] || 0);
+      const btn = document.createElement('button');
+      btn.className = 'chapter-btn' + (ci === this.selectedChapter ? ' active' : '') + (locked ? ' locked' : '');
+      btn.style.setProperty('--ch-accent', ch.accent);
+      btn.innerHTML = `<span class="ch-num">${ci + 1}</span>
+        <span class="ch-name">${ch.name}</span>
+        <span class="ch-stars">${locked ? '🔒' : stars + '/' + (MAPS_PER_CHAPTER * 3) + ' ★'}</span>`;
+      btn.disabled = locked;
+      btn.setAttribute('aria-label', `Chapter ${ci + 1}: ${ch.name}${locked ? ' (locked)' : ''}`);
+      if (!locked) btn.onclick = () => { this.selectedChapter = ci; this.buildLevelSelect(); };
+      strip.appendChild(btn);
+    });
+  },
+
+  renderChapterMaps(prog) {
     const grid = this.els.levelGrid;
     grid.innerHTML = '';
-    const prog = Store.getProgress();
-    MAPS.forEach((m, i) => {
+    const start = this.selectedChapter * MAPS_PER_CHAPTER;
+    for (let k = 0; k < MAPS_PER_CHAPTER; k++) {
+      const i = start + k;
+      const m = MAPS[i];
+      if (!m) continue;
       const locked = (i + 1) > prog.unlocked;
       const stars = prog.stars[m.id] || 0;
       const card = document.createElement('div');
       card.className = 'level-card' + (locked ? ' locked' : '');
-      const grad = `linear-gradient(135deg, ${m.bg[0]}, ${m.pathColor})`;
+      card.tabIndex = locked ? -1 : 0;
+      card.setAttribute('role', 'button');
+      card.setAttribute('aria-label', `${m.name}, ${m.diff}, ${stars} of 3 stars${locked ? ', locked' : ''}`);
       card.innerHTML = `
-        <div class="lc-name">${m.name}</div>
-        <div class="lc-diff">${m.diff} · ${m.waves} waves · Boss: ${ENEMIES[m.bossType].name}</div>
-        <div class="lc-preview" style="background:${grad}"></div>
+        <div class="lc-top"><span class="lc-num">${i + 1}</span>
+          <span class="lc-name">${m.biome} ${m.index + 1}</span></div>
+        <div class="lc-diff">${m.diff} · ${m.waves} waves</div>
+        <div class="lc-preview">${this.mapThumb(m)}</div>
+        <div class="lc-boss">☠ ${ENEMIES[m.bossType].name}</div>
         <div class="lc-stars">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</div>
         ${locked ? '<div class="lc-lock">🔒</div>' : ''}`;
-      if (!locked) card.onclick = () => Main.startLevel(i);
+      if (!locked) {
+        const go = () => Main.startLevel(i);
+        card.onclick = go;
+        card.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } };
+      }
       grid.appendChild(card);
-    });
+    }
+  },
+
+  // Tiny inline SVG preview of the actual path, themed per chapter, so each of
+  // the 100 maps is visually identifiable before you play it.
+  mapThumb(m) {
+    const w = 100, h = 56;
+    const pts = m.path.map(p => {
+      const x = (U.clamp(p.x, -0.5, m.cols + 0.5) + 0.5) / (m.cols + 1) * w;
+      const y = (p.y + 0.5) / m.rows * h;
+      return x.toFixed(1) + ',' + y.toFixed(1);
+    }).join(' ');
+    return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
+      <defs><linearGradient id="g${m.id}" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="${m.bg[0]}"/><stop offset="1" stop-color="${m.pathColor}"/>
+      </linearGradient></defs>
+      <rect width="${w}" height="${h}" fill="url(#g${m.id})"/>
+      <polyline points="${pts}" fill="none" stroke="${m.edgeColor}" stroke-width="6" stroke-linejoin="round" stroke-linecap="round" opacity="0.65"/>
+      <polyline points="${pts}" fill="none" stroke="${m.accent}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity="0.9"/>
+    </svg>`;
   },
 
   // Victory. Rewards are granted exactly once per completed run: `_rewarded`

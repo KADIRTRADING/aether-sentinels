@@ -1,7 +1,7 @@
 {
   "name": "aether-sentinels",
-  "version": "1.4.0",
-  "description": "Aether Sentinels — a strategic HTML5 tower defense game with unique towers, multiple maps, boss levels, and animations. Packaged for Google Play via Capacitor.",
+  "version": "2.0.0",
+  "description": "Aether Sentinels - a strategic HTML5 tower defense game: 100 themed maps, 10 towers with 10 levels, hero weapon fusion, bosses and animations. Packaged for Google Play via Capacitor.",
   "main": "index.html",
   "scripts": {
     "serve": "node tools/serve.js",
@@ -15,11 +15,21 @@
     "cap:sync": "npx cap sync android",
     "cap:open": "npx cap open android",
     "android:build": "cd android && ./gradlew assembleRelease",
-    "android:bundle": "cd android && ./gradlew bundleRelease"
+    "android:bundle": "cd android && ./gradlew bundleRelease",
+    "audit:campaign": "node test/campaign-audit.js"
   },
-  "keywords": ["game", "tower-defense", "html5", "canvas", "capacitor", "android"],
+  "keywords": [
+    "game",
+    "tower-defense",
+    "html5",
+    "canvas",
+    "capacitor",
+    "android"
+  ],
   "license": "MIT",
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "//": "The browser game has NO runtime dependencies - `npm run serve` and `npm test` work with a bare checkout. Capacitor is only needed to build the Android wrapper; those packages are optional so a plain clone never has to install anything.",
   "optionalDependencies": {
     "@capacitor/android": "^6.2.1",

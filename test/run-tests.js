@@ -120,7 +120,10 @@ test('no tower is strictly dominant on damage per gold', () => {
     dps[id] = (hp0 - (g.enemies[0] ? g.enemies[0].hp : hp0)) / 10 / TOWERS[id].cost * 100;
     delete ENEMIES.__dummy;
   }
-  const attackers = TOWER_ORDER.filter(id => TOWERS[id].kind !== 'support' && TOWERS[id].kind !== 'aoe-slow');
+  // Control/support towers (Pylon, Cryo, Graviton) buy time rather than damage,
+  // so they are excluded from the damage-per-gold fairness band.
+  const CONTROL = ['support', 'aoe-slow', 'gravity'];
+  const attackers = TOWER_ORDER.filter(id => !CONTROL.includes(TOWERS[id].kind));
   const vals = attackers.map(id => dps[id]);
   const max = Math.max(...vals), min = Math.min(...vals);
   assert(max / min < 2.0, 'damage-per-gold spread too wide: ' +
@@ -518,6 +521,223 @@ test('tab suspension does not fast-forward the simulation', () => {
   g.stop();
   assert(g.time - t0 <= MAX_FRAME + g.STEP, `advanced ${(g.time - t0).toFixed(3)}s, expected <= ${MAX_FRAME}`);
   assert(ticks <= 7, 'ran ' + ticks + ' ticks for one clamped frame');
+});
+
+// ------------------------------------------------------- campaign expansion
+group('Campaign: 100 maps / 10 chapters');
+
+test('exactly 100 maps across 10 chapters of 10', () => {
+  eq(G.TOTAL_MAPS, 100, 'total maps');
+  eq(MAPS.length, 100, 'MAPS length');
+  eq(G.CHAPTERS.length, 10, 'chapter count');
+  eq(G.MAPS_PER_CHAPTER, 10);
+  MAPS.forEach((m, i) => {
+    eq(m.id, i, 'map id matches index');
+    eq(m.chapter, Math.floor(i / 10), 'chapter assignment for map ' + i);
+  });
+});
+
+test('every map has a valid, walkable path entering and leaving the board', () => {
+  for (const m of MAPS) {
+    assert(m.path.length >= 3, m.name + ' path too short');
+    eq(m.path[0].x, -1, m.name + ' must enter from off the left edge');
+    eq(m.path[m.path.length - 1].x, m.cols, m.name + ' must exit off the right edge');
+    for (const p of m.path) {
+      assert(p.y >= 0 && p.y < m.rows, m.name + ' path leaves the board vertically at y=' + p.y);
+    }
+    // consecutive points must be axis-aligned and non-zero length
+    for (let i = 1; i < m.path.length; i++) {
+      const a = m.path[i - 1], b = m.path[i];
+      const dx = Math.abs(b.x - a.x), dy = Math.abs(b.y - a.y);
+      assert((dx === 0) !== (dy === 0), `${m.name} segment ${i} is not axis-aligned (${dx},${dy})`);
+    }
+  }
+});
+
+test('every map produces enough build nodes to be playable', () => {
+  for (let i = 0; i < MAPS.length; i += 7) {
+    const g = newGame(i);
+    assert(g.buildNodes.length >= 20, MAPS[i].name + ' only has ' + g.buildNodes.length + ' build nodes');
+  }
+});
+
+test('campaign difficulty rises monotonically map to map', () => {
+  for (let i = 1; i < MAPS.length; i++) {
+    assert(MAPS[i].diffScale >= MAPS[i - 1].diffScale,
+      `map ${i} diffScale ${MAPS[i].diffScale} < map ${i - 1} ${MAPS[i - 1].diffScale}`);
+    assert(MAPS[i].bossHpMul >= MAPS[i - 1].bossHpMul, `map ${i} boss scaling regressed`);
+  }
+  // and the span is meaningful
+  assert(MAPS[99].diffScale > MAPS[0].diffScale * 4, 'final map should be far harder than the first');
+});
+
+test('map generation is deterministic', () => {
+  const a = MAPS.map(m => m.path.map(p => p.x + ':' + p.y).join('>')).join('|');
+  const b = G.MAPS.map(m => m.path.map(p => p.x + ':' + p.y).join('>')).join('|');
+  eq(a, b, 'paths must be stable');
+  // decor placement is seeded too
+  const g1 = newGame(33), g2 = newGame(33);
+  eq(g1.decor.length, g2.decor.length, 'decor count stable');
+  eq(JSON.stringify(g1.decor.slice(0, 5)), JSON.stringify(g2.decor.slice(0, 5)), 'decor layout stable');
+});
+
+test('decoration never sits on the path', () => {
+  for (const i of [0, 12, 37, 58, 71, 99]) {
+    const g = newGame(i);
+    for (const d of g.decor) {
+      const key = Math.floor(d.x) + ',' + Math.floor(d.y);
+      assert(!g.pathTiles.has(key), MAPS[i].name + ' has decor on the path at ' + key);
+    }
+    assert(g.decor.length > 0, MAPS[i].name + ' should have some scenery');
+  }
+});
+
+test('each chapter has a complete, distinct theme', () => {
+  const seen = new Set();
+  for (const ch of G.CHAPTERS) {
+    for (const k of ['name', 'biome', 'bg', 'path', 'edge', 'accent', 'deco', 'decoDensity']) {
+      assert(ch[k] != null, `chapter ${ch.name} missing ${k}`);
+    }
+    assert(Array.isArray(ch.bg) && ch.bg.length === 2, ch.name + ' needs a 2-stop gradient');
+    assert(Array.isArray(ch.deco) && ch.deco.length > 0, ch.name + ' needs decoration kinds');
+    // colours must be valid hex
+    for (const c of [ch.path, ch.edge, ch.accent, ...ch.bg]) {
+      assert(/^#[0-9a-f]{6}$/i.test(c), `${ch.name} has an invalid colour: ${c}`);
+    }
+    assert(!seen.has(ch.name), 'duplicate chapter name ' + ch.name);
+    seen.add(ch.name);
+  }
+});
+
+group('Ten towers and ten levels');
+
+test('there are 10 towers, progressively unlocked', () => {
+  eq(TOWER_ORDER.length, 10, 'tower count');
+  eq(G.unlockedTowers(1).length, 6, 'first map offers the original six');
+  eq(G.unlockedTowers(100).length, 10, 'all towers available late');
+  // unlock thresholds must be ascending in tray order
+  let prev = 0;
+  for (const id of TOWER_ORDER) {
+    const at = TOWERS[id].unlockAt || 0;
+    assert(at >= prev, `${id} unlockAt ${at} breaks ascending order`);
+    prev = at;
+  }
+});
+
+test('every tower kind is implemented and can fire without error', () => {
+  for (const id of TOWER_ORDER) {
+    const g = newGame(30);
+    g.gold = 1e9; g.selectedBuild = id;
+    const n = g.buildNodes[0];
+    assert(g.tryBuild(n.x, n.y), 'could not build ' + id);
+    const t = g.towers[0];
+    // put a target in range and run long enough for several cycles
+    ENEMIES.__t = { name: 'T', hp: 1e9, speed: 0, gold: 0, color: '#fff', r: 0.3, armor: 4 };
+    g.spawnAt('__t', t.x + 1, t.y, 0, 0);
+    const e = g.enemies[0]; e.baseSpeed = 0;
+    for (let i = 0; i < 300; i++) { e.x = t.x + 1; e.y = t.y; g.update(1 / 60); }
+    delete ENEMIES.__t;
+    // control towers deal little/no damage but must still run cleanly
+    const control = ['support', 'aoe-slow', 'gravity'].includes(TOWERS[id].kind);
+    if (!control) assert(g.enemies[0].hp < 1e9, id + ' dealt no damage');
+  }
+});
+
+test('towers can be levelled to 10 and stats scale', () => {
+  withSave({ coins: 1e7 }, () => {
+    const g = newGame(); g.gold = 1e9; g.selectedBuild = 'rail';
+    const n = g.buildNodes[0]; g.tryBuild(n.x, n.y);
+    const t = g.towers[0];
+    const dmg1 = t.stats.dmg;
+    let guard = 0;
+    while (t.levelUpCost() != null && guard++ < 30) g.levelUpUnit(t);
+    eq(t.level, 10, 'reached level 10');
+    eq(ASSET_CONFIG.levelUp.maxLevel, 10);
+    eq(ASSET_CONFIG.levelUp.costs.length, 9, 'nine level-up steps for ten levels');
+    assert(t.stats.dmg > dmg1 * 3, `level 10 damage ${t.stats.dmg} should far exceed level 1 ${dmg1}`);
+    eq(g.levelUpUnit(t), false, 'cannot exceed level 10');
+  });
+});
+
+test('Graviton Well drags enemies back along the path', () => {
+  const g = newGame();
+  g.spawnAt('drone', g.path[0].x, g.path[0].y, 0, 0);
+  const e = g.enemies[0];
+  // advance it along the path first
+  for (let i = 0; i < 180; i++) g.update(1 / 60);
+  const before = e.dist, idx = e.pathIndex;
+  e.pullBack(1.5);
+  assert(e.dist < before, `pull should reduce progress (${before} -> ${e.dist})`);
+  assert(e.pathIndex <= idx, 'pull should not advance the path index');
+  assert(e.x >= -1.01 && e.y >= -0.01, 'pulled enemy stays on the board');
+  // pulling at the spawn point must not break anything
+  const g2 = newGame();
+  g2.spawnAt('drone', g2.path[0].x, g2.path[0].y, 0, 0);
+  const e2 = g2.enemies[0];
+  e2.pullBack(99);
+  eq(e2.pathIndex, 0, 'cannot be pulled behind the spawn');
+  assert(e2.dist >= 0, 'distance never negative');
+});
+
+test('Prism Lance ramps damage the longer it holds a target', () => {
+  const g = newGame(30);
+  g.gold = 1e9; g.selectedBuild = 'prism';
+  const n = g.buildNodes[0]; g.tryBuild(n.x, n.y);
+  const t = g.towers[0];
+  ENEMIES.__p = { name: 'P', hp: 1e9, speed: 0, gold: 0, color: '#fff', r: 0.3, armor: 0 };
+  g.spawnAt('__p', t.x + 1, t.y, 0, 0);
+  const e = g.enemies[0]; e.baseSpeed = 0;
+  const sample = (secs) => {
+    const h0 = e.hp;
+    for (let i = 0; i < secs * 60; i++) { e.x = t.x + 1; e.y = t.y; g.update(1 / 60); }
+    return h0 - e.hp;
+  };
+  const first = sample(1);          // ramp still near 1x
+  sample(12);                        // hold the beam long enough to approach the ceiling
+  const later = sample(1);           // ramp near rampMax
+  delete ENEMIES.__p;
+  assert(later > first * 1.8, `ramp should increase damage (${first.toFixed(0)} -> ${later.toFixed(0)})`);
+  // and it must respect the configured ceiling rather than growing forever
+  const ceiling = TOWERS.prism.base.rampMax;
+  assert(later < first * (ceiling + 0.6), `ramp exceeded its ceiling (${(later / first).toFixed(2)}x vs max ${ceiling}x)`);
+});
+
+test('Pyre Vent only burns enemies inside its cone', () => {
+  const g = newGame(30);
+  g.gold = 1e9; g.selectedBuild = 'pyre';
+  const n = g.buildNodes.find(b => b.x > 2 && b.y > 2) || g.buildNodes[0];
+  g.tryBuild(n.x, n.y);
+  const t = g.towers[0];
+  ENEMIES.__f = { name: 'F', hp: 1e9, speed: 0, gold: 0, color: '#fff', r: 0.2, armor: 0 };
+  // one target in front, one directly behind at the same distance
+  g.spawnAt('__f', t.x + 1.5, t.y, 0, 0);
+  g.spawnAt('__f', t.x - 1.5, t.y, 0, 0);
+  const [a, b2] = g.enemies; a.baseSpeed = 0; b2.baseSpeed = 0;
+  t.angle = 0; // face +x
+  const ha = a.hp, hb = b2.hp;
+  for (let i = 0; i < 120; i++) {
+    a.x = t.x + 1.5; a.y = t.y; b2.x = t.x - 1.5; b2.y = t.y;
+    t.angle = 0;                      // hold the facing
+    g.update(1 / 60);
+  }
+  delete ENEMIES.__f;
+  assert(ha - a.hp > 0, 'target in the cone should burn');
+  assert((ha - a.hp) > (hb - b2.hp), 'the target in front must take more damage than the one behind');
+});
+
+test('Flak Battery fires multiple pellets per shot', () => {
+  const g = newGame(30);
+  g.gold = 1e9; g.selectedBuild = 'flak';
+  const n = g.buildNodes[0]; g.tryBuild(n.x, n.y);
+  const t = g.towers[0];
+  ENEMIES.__k = { name: 'K', hp: 1e9, speed: 0, gold: 0, color: '#fff', r: 0.35, armor: 0 };
+  g.spawnAt('__k', t.x + 1, t.y, 0, 0);
+  const e = g.enemies[0]; e.baseSpeed = 0;
+  g.beams.length = 0;
+  t.cooldown = 0; t.angle = U.angleTo(t.x, t.y, e.x, e.y);
+  t.fire(e, { dmgMul: 1, rateMul: 1, rangeAdd: 0 });
+  delete ENEMIES.__k;
+  eq(g.beams.length, Math.round(TOWERS.flak.base.pellets), 'one beam per pellet');
 });
 
 // ------------------------------------------------------------------ summary

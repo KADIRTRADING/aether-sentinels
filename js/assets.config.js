@@ -82,12 +82,13 @@ const ASSET_CONFIG = {
   //  Cost (in COINS) to raise a unit's level. Index 0 = cost for 1->2.
   //  Level increases stats multiplicatively (see levelBonus).
   levelUp: {
-    costs: [50, 120, 250, 500, 900],  // 1->2, 2->3, 3->4, 4->5, 5->6
-    maxLevel: 6,
-    // each level multiplies damage & health by this much
-    dmgPerLevel: 0.35,     // +35% damage per level
-    hpPerLevel: 0.30,      // +30% health per level (heroes)
-    ratePerLevel: 0.06,    // fires 6% faster per level
+    // Cost in COINS for each step: index 0 = 1->2, index 8 = 9->10.
+    costs: [50, 110, 200, 340, 540, 820, 1200, 1700, 2400],
+    maxLevel: 10,
+    // Per-level multipliers (applied linearly: level 10 = +2.7x damage)
+    dmgPerLevel: 0.30,     // +30% damage per level
+    hpPerLevel: 0.26,      // +26% health per level (heroes)
+    ratePerLevel: 0.05,    // fires 5% faster per level
   },
 
   // ---- REWARDED ADS ----

@@ -36,6 +36,32 @@ class Enemy {
   }
   freeze(dur) { this.frozen = Math.max(this.frozen, dur); }
 
+  // Drag the enemy backwards along the path by `amount` tiles (Graviton Well).
+  // Walks segments in reverse so it works across corners, and can never push an
+  // enemy behind the spawn point.
+  pullBack(amount) {
+    const path = this.game.path;
+    let left = Math.max(0, amount);
+    while (left > 0 && (this.pathIndex > 0 || this.t > 0)) {
+      const a = path[this.pathIndex], b2 = path[this.pathIndex + 1] || a;
+      const segLen = U.dist(a.x, a.y, b2.x, b2.y) || 0.0001;
+      const backOnSeg = this.t * segLen;              // distance travelled into this segment
+      if (backOnSeg >= left) { this.t -= left / segLen; left = 0; }
+      else {
+        left -= backOnSeg;
+        if (this.pathIndex === 0) { this.t = 0; break; }
+        this.pathIndex--;
+        this.t = 1;
+      }
+    }
+    this.t = U.clamp(this.t, 0, 1);
+    this.dist = Math.max(0, this.dist - amount);
+    const na = path[this.pathIndex], nb = path[this.pathIndex + 1] || na;
+    this.x = U.lerp(na.x, nb.x, this.t);
+    this.y = U.lerp(na.y, nb.y, this.t);
+    this.pulled = 0.3;   // brief visual marker
+  }
+
   applyDot(dps, dur, pct) { this.dots.push({ dps, time: dur, pct: pct || 0 }); }
 
   damage(amount, opts = {}) {
@@ -334,6 +360,86 @@ class Tower {
 
     if (this.def.kind === 'support') { this._buffPulse = (this._buffPulse || 0) + dt; return; }
 
+    // ---- Pyre Vent: continuous flame cone in front of the turret ----
+    if (this.def.kind === 'flame') {
+      const target = this.pickTarget(range);
+      if (target) this.angle = U.approachAngle(this.angle, U.angleTo(this.x, this.y, target.x, target.y), dt * 9);
+      this.flameOn = !!target;
+      if (this.cooldown <= 0 && target) {
+        this.cooldown = this.stats.rate / b.rateMul;
+        const halfArc = (this.stats.arc || 0.8) / 2;
+        const armorMul = this.stats.armorMul != null ? U.clamp(this.stats.armorMul, 0, 1) : 1;
+        let hit = false;
+        for (const e of this.game.enemies) {
+          if (e.dead) continue;
+          const d = U.dist(this.x, this.y, e.x, e.y);
+          if (d > range + e.r) continue;
+          // inside the cone?
+          const a = U.angleTo(this.x, this.y, e.x, e.y);
+          let da = Math.abs(((a - this.angle + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+          if (da > halfArc && d > 0.8) continue;   // very close enemies are always hit
+          e.damage(this.stats.dmg * b.dmgMul, { armorMul });
+          if (this.stats.burn) e.applyDot(this.stats.burn, this.stats.burnDur || 2, 0);
+          hit = true;
+        }
+        if (hit) {
+          if (!Assets.playFire(this.id)) Sound.flame && Sound.flame();
+          const m = { x: this.x + Math.cos(this.angle) * range * 0.6, y: this.y + Math.sin(this.angle) * range * 0.6 };
+          this.game.particles.burst(m.x, m.y, '#ff9d3c', 3, 2, 'spark', 0.22, 0.13);
+        }
+      }
+      return;
+    }
+
+    // ---- Graviton Well: heavy slow plus a periodic pull back along the path ----
+    if (this.def.kind === 'gravity') {
+      // continuous slow inside the field
+      for (const e of this.game.enemies) {
+        if (e.dead) continue;
+        if (U.dist(this.x, this.y, e.x, e.y) <= range) {
+          e.applySlow(1 - this.stats.slow, this.stats.slowDur);
+        }
+      }
+      if (this.cooldown <= 0) {
+        this.cooldown = this.stats.rate / b.rateMul;
+        let pulled = false;
+        for (const e of this.game.enemies) {
+          if (e.dead || e.boss) continue;               // bosses resist the pull
+          if (U.dist(this.x, this.y, e.x, e.y) <= range) {
+            e.pullBack(this.stats.pull);
+            if (this.stats.dmg) e.damage(this.stats.dmg * b.dmgMul, { armorMul: 0.5 });
+            pulled = true;
+          }
+        }
+        if (pulled) {
+          if (!Assets.playFire(this.id)) Sound.gravity && Sound.gravity();
+          this.game.particles.ring(this.x, this.y, this.def.color, range * 0.85);
+        }
+      }
+      this._spin = (this._spin || 0) + dt * 2.4;
+      return;
+    }
+
+    // ---- Prism Lance: continuous beam that ramps while locked on one target ----
+    if (this.def.kind === 'beam') {
+      const target = this.pickTarget(range);
+      if (!target) { this.beamTarget = null; this.rampT = 0; return; }
+      this.angle = U.approachAngle(this.angle, U.angleTo(this.x, this.y, target.x, target.y), dt * 8);
+      // reset the ramp when the beam switches target
+      if (this.beamTarget !== target) { this.beamTarget = target; this.rampT = 0; }
+      this.rampT = Math.min((this.rampT || 0) + dt, 60);
+      if (this.cooldown <= 0) {
+        this.cooldown = this.stats.rate / b.rateMul;
+        const mult = Math.min(1 + this.rampT * (this.stats.ramp || 0.15), this.stats.rampMax || 3);
+        const dmg = this.stats.dmg * b.dmgMul * mult;
+        target.damage(dmg, { pierce: !!this.stats.pierce });
+        this.game.beams.push({ x1: this.x, y1: this.y, x2: target.x, y2: target.y, life: 0.1, color: this.def.color });
+        if (Math.random() < 0.35) this.game.particles.sparks(target.x, target.y, this.def.color, 2);
+        if (!Assets.playFire(this.id)) { if (Math.random() < 0.25) Sound.beam && Sound.beam(); }
+      }
+      return;
+    }
+
     if (this.def.kind === 'aoe-slow') {
       // continuous field: slows everything in range, ticks damage
       if (this.cooldown <= 0) {
@@ -367,6 +473,39 @@ class Tower {
   fire(target, b) {
     this.recoil = 1; this._buff = b;
     const customAudio = Assets.playFire(this.id); // custom fire sound overrides built-in
+    // ---- Flak Battery: a spread of independent pellets ----
+    // Each pellet resolves separately, so Phantom's dodge is rolled per pellet
+    // and volume beats evasion — the designed counter to dodgy/fast enemies.
+    if (this.def.kind === 'flak') {
+      if (!customAudio) Sound.flak && Sound.flak();
+      const n = Math.max(1, Math.round(this.stats.pellets || 3));
+      const spread = this.stats.spread || 0.25;
+      const base = U.angleTo(this.x, this.y, target.x, target.y);
+      for (let i = 0; i < n; i++) {
+        const frac = n === 1 ? 0 : (i / (n - 1) - 0.5) * 2;   // -1..1 across the fan
+        const a = base + frac * spread;
+        // pellets are short-lived hitscan rays: find the first enemy along the ray
+        const reach = this.stats.range + b.rangeAdd;
+        let best = null, bestD = Infinity;
+        for (const e of this.game.enemies) {
+          if (e.dead) continue;
+          const d = U.dist(this.x, this.y, e.x, e.y);
+          if (d > reach + e.r) continue;
+          const ea = U.angleTo(this.x, this.y, e.x, e.y);
+          const da = Math.abs(((ea - a + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+          if (da < 0.18 + e.r / Math.max(0.5, d) && d < bestD) { bestD = d; best = e; }
+        }
+        const ex = this.x + Math.cos(a) * (best ? bestD : reach);
+        const ey = this.y + Math.sin(a) * (best ? bestD : reach);
+        this.game.beams.push({ x1: this.x, y1: this.y, x2: ex, y2: ey, life: 0.07, color: this.def.color });
+        if (best) {
+          best.damage(this.stats.dmg * b.dmgMul);
+          this.game.particles.sparks(ex, ey, this.def.color, 2);
+        }
+      }
+      this.game.addFloat(target.x, target.y, Math.round(this.stats.dmg * b.dmgMul * n * 0.6), this.def.color);
+      return;
+    }
     if (this.def.kind === 'sniper') {
       // hitscan
       if (!customAudio) Sound.shoot('sniper');

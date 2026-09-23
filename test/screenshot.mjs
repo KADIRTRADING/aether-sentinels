@@ -24,12 +24,20 @@ setTimeout(() => {
   try {
     Store.setSettings({ tutorialDone: ${scenario === 'tutorial' ? 'false' : 'true'} });
     Store.setCoins(340); Store.setAdReadyAt(0);
-    Main.startLevel(${scenario === 'boss' ? 1 : 0});
-    const g = Main.game; g.gold = 4000;
     const s = '${scenario}';
+    const MAPIDX = ${process.env.MAPIDX || 0};
+    if (s === 'levels') {
+      Main.showScreen('screen-levels');
+      UI.selectedChapter = ${process.env.CH || 0};
+      UI.buildLevelSelect();
+      return;
+    }
+    Main.startLevel(MAPIDX);
+    const g = Main.game; g.gold = 4000;
     if (s !== 'tutorial') {
-      ['cannon','arc','cryo','rail','venom','pylon'].forEach((t,i) => {
-        const n = g.buildNodes[i*4]; if (n) { g.selectedBuild = t; g.tryBuild(n.x, n.y); }
+      const pool = (typeof unlockedTowers === 'function' ? unlockedTowers(MAPIDX + 1) : ['cannon','arc','cryo','rail','venom','pylon']);
+      pool.forEach((t,i) => {
+        const n = g.buildNodes[i*3]; if (n) { g.selectedBuild = t; g.tryBuild(n.x, n.y); }
       });
       g.selectedBuild = null;
       const v = g.towers.find(t => t.id === 'venom'); if (v) { v.level = 3; v.recompute(); }

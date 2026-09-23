@@ -30,10 +30,10 @@ function loadGame() {
   global.Audio = function () { return { play: () => Promise.resolve(), cloneNode() { return this; }, set src(v) {} }; };
   global.AudioContext = function () { return { createGain: () => ({ gain: {}, connect() {} }), currentTime: 0, state: 'running', destination: {}, createOscillator: () => ({ frequency: { setValueAtTime() {}, exponentialRampToValueAtTime() {} }, connect() {}, start() {}, stop() {} }), createBuffer: () => ({ getChannelData: () => new Float32Array(1) }), createBufferSource: () => ({ connect() {}, start() {} }), createBiquadFilter: () => ({ frequency: {}, connect() {} }), resume() {}, sampleRate: 44100 }; };
   global.webkitAudioContext = global.AudioContext;
-  const files = ['utils.js', 'assets.config.js', 'data.js', 'audio.js', 'assetmanager.js', 'particles.js', 'entities.js', 'game.js'];
+  const files = ['utils.js', 'assets.config.js', 'data.js', 'maps.js', 'audio.js', 'assetmanager.js', 'particles.js', 'entities.js', 'game.js'];
   let combined = '';
   for (const f of files) combined += fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8') + '\n';
-  combined += '\nmodule.exports = { U, Store, ASSET_CONFIG, Assets, TILE, TOWERS, TOWER_ORDER, HEROES, HERO_ORDER, HERO_BUYABLE, ENEMIES, ENEMY_THREAT, MAPS, generateWaves, waveThreat, Sound, ParticleSystem, Enemy, Projectile, Tower, Hero, Bullet, Shell, Game };\n';
+  combined += '\nmodule.exports = { U, Store, ASSET_CONFIG, Assets, TILE, TOWERS, TOWER_ORDER, unlockedTowers, HEROES, HERO_ORDER, HERO_BUYABLE, ENEMIES, ENEMY_THREAT, MAPS, CHAPTERS, MAPS_PER_CHAPTER, TOTAL_MAPS, generateDecor, chapterOf, difficultyLabel, generateWaves, waveThreat, Sound, ParticleSystem, Enemy, Projectile, Tower, Hero, Bullet, Shell, Game };\n';
   const mod = { exports: {} };
   const fn = new Function('module', 'exports', 'require', 'global', 'window', 'document', 'localStorage', 'performance', 'AudioContext', 'webkitAudioContext', 'Image', 'Audio', 'requestAnimationFrame', 'cancelAnimationFrame', combined);
   fn(mod, mod.exports, require, global, global.window, global.document, global.localStorage, global.performance, global.AudioContext, global.webkitAudioContext, global.Image, global.Audio, global.requestAnimationFrame, global.cancelAnimationFrame);

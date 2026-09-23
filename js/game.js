@@ -34,6 +34,11 @@ class Game {
     this.towerMap = new Map();
     this.buffEpoch = 0;   // bumped whenever the tower set/stats change
     this.pathTiles = this.computePathTiles();
+    // Themed scenery for this map. Placed only on tiles that are neither path
+    // nor build node, so decoration never obscures a gameplay affordance.
+    this.decor = (typeof generateDecor === 'function')
+      ? generateDecor(map, this.pathTiles, this.buildNodeSet, map.seed || (mapIndex + 1) * 7919)
+      : [];
     // active abilities: cooldown timers (seconds). 0 = ready.
     this.abilities = {
       strike: { cd: 0, max: 25, radius: 2.2, dmg: 260, name: 'Orbital Strike' },
@@ -549,6 +554,11 @@ class Game {
     for (let x = 0; x <= this.cols; x++) { ctx.beginPath(); ctx.moveTo(x * s, 0); ctx.lineTo(x * s, this.viewH); ctx.stroke(); }
     for (let y = 0; y <= this.rows; y++) { ctx.beginPath(); ctx.moveTo(0, y * s); ctx.lineTo(this.viewW, y * s); ctx.stroke(); }
 
+    // themed scenery sits under the path so gameplay always reads on top
+    this.drawDecor(ctx, s);
+    // chapter colour wash for biome identity
+    if (this.map.fog) { ctx.fillStyle = this.map.fog; ctx.fillRect(0, 0, this.viewW, this.viewH); }
+
     this.drawPath(ctx, s);
     this.drawBuildNodes(ctx, s);
 
@@ -669,22 +679,140 @@ class Game {
   drawPath(ctx, s) {
     const pts = this.path;
     ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    const trace = () => {
+      ctx.beginPath(); ctx.moveTo(pts[0].x * s, pts[0].y * s);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x * s, pts[i].y * s);
+    };
+    // themed kerb in the chapter's edge colour, so each biome reads differently
+    if (this.map.edgeColor) {
+      ctx.strokeStyle = this.map.edgeColor; ctx.globalAlpha = 0.5;
+      ctx.lineWidth = s * 0.98; trace(); ctx.stroke(); ctx.globalAlpha = 1;
+    }
     // outer
     ctx.strokeStyle = this.map.pathColor; ctx.lineWidth = s * 0.86;
-    ctx.beginPath(); ctx.moveTo(pts[0].x * s, pts[0].y * s);
-    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x * s, pts[i].y * s);
-    ctx.stroke();
+    trace(); ctx.stroke();
     // inner
     ctx.strokeStyle = 'rgba(255,255,255,.05)'; ctx.lineWidth = s * 0.5;
     ctx.beginPath(); ctx.moveTo(pts[0].x * s, pts[0].y * s);
     for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x * s, pts[i].y * s);
     ctx.stroke();
-    // animated flow dashes
-    ctx.strokeStyle = 'rgba(53,224,208,.25)'; ctx.lineWidth = s * 0.08;
-    ctx.setLineDash([s * 0.3, s * 0.5]); ctx.lineDashOffset = -this.time * s * 2;
-    ctx.beginPath(); ctx.moveTo(pts[0].x * s, pts[0].y * s);
-    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x * s, pts[i].y * s);
-    ctx.stroke(); ctx.setLineDash([]);
+    // animated flow dashes, tinted with the chapter accent
+    ctx.globalAlpha = 0.28;
+    ctx.strokeStyle = this.map.accent || '#35e0d0'; ctx.lineWidth = s * 0.08;
+    ctx.setLineDash([s * 0.3, s * 0.5]);
+    ctx.lineDashOffset = this.reducedMotion ? 0 : -this.time * s * 2;
+    trace(); ctx.stroke();
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
+  }
+
+  // ---------- themed scenery ----------
+  // Draws the chapter's decorative props. Kept intentionally cheap: flat vector
+  // shapes, no shadows/blur, and a subtle sway driven by each prop's phase
+  // (disabled under reduced motion).
+  drawDecor(ctx, s) {
+    const map = this.map;
+    const accent = map.accent || '#4dffa1';
+    const edge = map.edgeColor || '#2f6a49';
+    const sway = this.reducedMotion ? 0 : 1;
+    for (let i = 0; i < this.decor.length; i++) {
+      const d = this.decor[i];
+      const px = d.x * s, py = d.y * s, z = d.s * s * 0.34;
+      const wob = sway * Math.sin(this.time * 0.9 + d.t * 6.28) * 0.08;
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(d.r * 0.15 + wob);
+      // props sitting on a build node are faded so the ⬡ marker stays readable
+      const dim = d.dim || 1;
+      const A = (v) => { ctx.globalAlpha = v * dim; };
+      switch (d.kind) {
+        case 'tree':
+          ctx.fillStyle = 'rgba(0,0,0,.35)';
+          ctx.fillRect(-z * 0.08, 0, z * 0.16, z * 0.5);
+          ctx.fillStyle = edge;
+          ctx.beginPath();
+          ctx.moveTo(0, -z); ctx.lineTo(z * 0.52, z * 0.18); ctx.lineTo(-z * 0.52, z * 0.18);
+          ctx.closePath(); ctx.fill();
+          A(0.5); ctx.fillStyle = accent;
+          ctx.beginPath();
+          ctx.moveTo(0, -z * 0.9); ctx.lineTo(z * 0.3, -z * 0.1); ctx.lineTo(-z * 0.3, -z * 0.1);
+          ctx.closePath(); ctx.fill();
+          break;
+        case 'rock':
+          ctx.fillStyle = edge; A(0.75);
+          ctx.beginPath();
+          ctx.moveTo(-z * 0.6, z * 0.3); ctx.lineTo(-z * 0.25, -z * 0.5);
+          ctx.lineTo(z * 0.35, -z * 0.4); ctx.lineTo(z * 0.62, z * 0.3);
+          ctx.closePath(); ctx.fill();
+          break;
+        case 'crystal':
+          A(0.5 + 0.25 * Math.sin(this.time * 1.6 + d.t * 6.28) * sway);
+          ctx.fillStyle = accent;
+          ctx.beginPath();
+          ctx.moveTo(0, -z * 1.1); ctx.lineTo(z * 0.32, 0); ctx.lineTo(0, z * 0.5); ctx.lineTo(-z * 0.32, 0);
+          ctx.closePath(); ctx.fill();
+          break;
+        case 'vent': {
+          // lava vent: glowing pool with a rising shimmer
+          const pulse = 0.45 + 0.3 * Math.sin(this.time * 2.2 + d.t * 6.28) * sway;
+          A(0.7); ctx.fillStyle = edge;
+          ctx.beginPath(); ctx.ellipse(0, 0, z * 0.6, z * 0.34, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.globalAlpha = pulse; ctx.fillStyle = accent;
+          ctx.beginPath(); ctx.ellipse(0, 0, z * 0.34, z * 0.18, 0, 0, Math.PI * 2); ctx.fill();
+          break;
+        }
+        case 'ice':
+          A(0.45); ctx.fillStyle = accent;
+          ctx.beginPath();
+          ctx.moveTo(0, -z); ctx.lineTo(z * 0.26, -z * 0.1); ctx.lineTo(z * 0.1, z * 0.45);
+          ctx.lineTo(-z * 0.16, z * 0.4); ctx.lineTo(-z * 0.28, -z * 0.12);
+          ctx.closePath(); ctx.fill();
+          A(0.8); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = Math.max(1, s * 0.015);
+          ctx.stroke();
+          break;
+        case 'shard':
+          A(0.55); ctx.strokeStyle = accent; ctx.lineWidth = Math.max(1, s * 0.03);
+          ctx.beginPath(); ctx.moveTo(-z * 0.4, z * 0.3); ctx.lineTo(0, -z * 0.8); ctx.lineTo(z * 0.4, z * 0.2);
+          ctx.stroke();
+          break;
+        case 'pipe':
+          A(0.6); ctx.strokeStyle = edge;
+          ctx.lineWidth = Math.max(2, z * 0.26); ctx.lineCap = 'round';
+          ctx.beginPath(); ctx.moveTo(-z * 0.55, z * 0.2); ctx.lineTo(z * 0.1, z * 0.2); ctx.lineTo(z * 0.45, -z * 0.35);
+          ctx.stroke();
+          A(0.5); ctx.fillStyle = accent;
+          ctx.beginPath(); ctx.arc(z * 0.45, -z * 0.35, z * 0.13, 0, Math.PI * 2); ctx.fill();
+          break;
+        case 'ruin':
+          A(0.6); ctx.fillStyle = edge;
+          ctx.fillRect(-z * 0.5, -z * 0.15, z * 0.28, z * 0.75);
+          ctx.fillRect(z * 0.12, -z * 0.5, z * 0.26, z * 1.1);
+          A(0.35);
+          ctx.fillRect(-z * 0.55, z * 0.52, z * 1.1, z * 0.16);
+          break;
+        case 'fungus': {
+          const glow = 0.4 + 0.3 * Math.sin(this.time * 1.3 + d.t * 6.28) * sway;
+          A(0.6); ctx.fillStyle = edge;
+          ctx.fillRect(-z * 0.07, -z * 0.1, z * 0.14, z * 0.55);
+          ctx.globalAlpha = glow; ctx.fillStyle = accent;
+          ctx.beginPath(); ctx.ellipse(0, -z * 0.18, z * 0.42, z * 0.28, 0, 0, Math.PI * 2); ctx.fill();
+          break;
+        }
+        case 'rune': {
+          const glow = 0.3 + 0.35 * Math.sin(this.time * 1.1 + d.t * 6.28) * sway;
+          ctx.globalAlpha = glow; ctx.strokeStyle = accent; ctx.lineWidth = Math.max(1, s * 0.028);
+          ctx.beginPath();
+          for (let k = 0; k < 3; k++) {
+            const a = d.r + k * (Math.PI * 2 / 3);
+            ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * z * 0.6, Math.sin(a) * z * 0.6);
+          }
+          ctx.stroke();
+          ctx.beginPath(); ctx.arc(0, 0, z * 0.24, 0, Math.PI * 2); ctx.stroke();
+          break;
+        }
+      }
+      ctx.restore();
+      ctx.globalAlpha = 1;
+    }
   }
 
   drawBuildNodes(ctx, s) {
