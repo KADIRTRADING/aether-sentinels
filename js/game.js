@@ -189,9 +189,10 @@ class Game {
   // ---------- build / interact ----------
   tryBuild(tx, ty) {
     if (!this.selectedBuild) return false;
-    if (!this.isBuildNode(tx, ty) || this.towerAt(tx, ty)) { this.toast('Invalid spot'); return false; }
+    if (!this.isBuildNode(tx, ty)) { Sound.error && Sound.error(); this.toast('Place on a glowing ⬡ node'); return false; }
+    if (this.towerAt(tx, ty)) { Sound.error && Sound.error(); this.toast('That node is occupied'); return false; }
     const def = TOWERS[this.selectedBuild];
-    if (this.gold < def.cost) { this.toast('Not enough gold'); return false; }
+    if (this.gold < def.cost) { Sound.error && Sound.error(); this.toast('Not enough gold (need ' + def.cost + ' ⬢)'); return false; }
     this.spendGold(def.cost);
     const t = new Tower(this.selectedBuild, tx, ty, this);
     this.towers.push(t);
@@ -232,11 +233,11 @@ class Game {
   deployHero(tile) {
     if (!this.selectedHero) return false;
     const def = HEROES[this.selectedHero];
-    if (this.gold < def.cost) { this.toast('Not enough gold'); return false; }
+    if (this.gold < def.cost) { Sound.error && Sound.error(); this.toast('Not enough gold (need ' + def.cost + ' ⬢)'); return false; }
     const fx = U.clamp(tile.fx, 0.4, this.cols - 0.4);
     const fy = U.clamp(tile.fy, 0.4, this.rows - 0.4);
     // don't stack directly on another hero
-    if (this.heroAt(fx, fy)) { this.toast('Too close to another hero'); return false; }
+    if (this.heroAt(fx, fy)) { Sound.error && Sound.error(); this.toast('Too close to another hero'); return false; }
     this.spendGold(def.cost);
     const h = new Hero(this.selectedHero, fx, fy, this);
     this.heroes.push(h);
@@ -334,7 +335,7 @@ class Game {
   onEnemyKilled(e) {
     this.addGold(e.gold);
     this.particles.burst(e.x, e.y, e.color, e.boss ? 40 : 12, e.boss ? 5 : 3, 'spark', 0.6, e.boss ? 0.25 : 0.14);
-    if (e.boss) { this.shake = 0.8; this.particles.ring(e.x, e.y, e.color, 3); Sound.win(); }
+    if (e.boss) { this.shake = 0.8; this.particles.ring(e.x, e.y, e.color, 3); Sound.bossDown && Sound.bossDown(); }
     else Sound.kill();
     // split on death
     if (e.def.splitOnDeath) {
@@ -343,11 +344,16 @@ class Game {
   }
 
   onEnemyLeaked(e) {
-    const dmg = e.boss ? 10 : 1;
+    // Boss leaks hurt a lot but shouldn't instantly end the run: scale to ~25%
+    // of the map's starting lives instead of a flat 10.
+    const dmg = e.boss ? Math.max(3, Math.round(this.map.lives * 0.25)) : 1;
     this.lives -= dmg;
     this.shake = e.boss ? 0.7 : 0.25;
     Sound.hitCore();
-    this.particles.burst(this.path[this.path.length - 1].x, this.path[this.path.length - 1].y, '#ff5470', 16, 3, 'spark', 0.5);
+    const end = this.path[this.path.length - 1];
+    this.particles.burst(end.x, end.y, '#ff5470', 16, 3, 'spark', 0.5);
+    this.addFloat(end.x, end.y, '-' + dmg + ' ❤', '#ff5470');
+    if (e.boss) this.toast('The ' + e.def.name + ' reached your Core! −' + dmg + ' lives');
     this.emit();
     if (this.lives <= 0) { this.lives = 0; this.lose(); }
   }
@@ -369,24 +375,49 @@ class Game {
   }
 
   // ---------- loop ----------
+  // Fixed-timestep simulation with an accumulator. Gameplay always advances in
+  // constant STEP-sized ticks so behaviour is identical at any frame rate; the
+  // speed multiplier simply runs more ticks per real second. Rendering happens
+  // once per animation frame with the latest state.
   start() {
     this.running = true; this._lastT = performance.now();
+    this._accum = 0;
+    this.STEP = 1 / 60;               // fixed simulation step (seconds)
+    const MAX_FRAME = 0.1;            // clamp huge gaps (tab resume) to avoid spiral-of-death
+    const MAX_TICKS = 8;              // never run more than this many sim steps per frame
     const loop = (now) => {
       if (!this.running) return;
-      let dt = (now - this._lastT) / 1000; this._lastT = now;
-      dt = Math.min(dt, 0.05);
+      let frame = (now - this._lastT) / 1000; this._lastT = now;
+      if (frame > MAX_FRAME) frame = MAX_FRAME;   // dropped time after suspension is discarded, not fast-forwarded
       if (this.map) {
-        if (!this.paused && this.state !== 'won' && this.state !== 'lost') {
-          const steps = this.speed;
-          for (let i = 0; i < steps; i++) this.update(dt);
+        const simulating = !this.paused && this.state !== 'won' && this.state !== 'lost';
+        if (simulating) {
+          this._accum += frame * this.speed;
+          let ticks = 0;
+          while (this._accum >= this.STEP && ticks < MAX_TICKS * this.speed) {
+            this.update(this.STEP);
+            this._accum -= this.STEP;
+            ticks++;
+          }
+          // if we hit the tick ceiling, drop the backlog so we don't spiral
+          if (this._accum > this.STEP) this._accum = 0;
+        } else {
+          this._accum = 0;
         }
         this.render();
       }
       this._raf = requestAnimationFrame(loop);
     };
     this._raf = requestAnimationFrame(loop);
+    // Pause simulation timing when the tab is hidden so returning doesn't lurch.
+    this._onVis = () => { if (document.hidden) { this._accum = 0; } this._lastT = performance.now(); };
+    document.addEventListener('visibilitychange', this._onVis);
   }
-  stop() { this.running = false; if (this._raf) cancelAnimationFrame(this._raf); }
+  stop() {
+    this.running = false;
+    if (this._raf) cancelAnimationFrame(this._raf);
+    if (this._onVis) { document.removeEventListener('visibilitychange', this._onVis); this._onVis = null; }
+  }
 
   update(dt) {
     this.time += dt;
@@ -437,7 +468,7 @@ class Game {
       const bonus = 30 + this.waveIndex * 8;
       this.addGold(bonus);
       if (this.waveIndex >= this.waves.length) { this.win(); }
-      else { this.state = 'building'; this.toast('Wave cleared! +' + bonus + ' ⬢'); }
+      else { this.state = 'building'; Sound.waveClear && Sound.waveClear(); this.toast('Wave cleared!  +' + bonus + ' ⬢  ·  Build & upgrade, then Start Wave'); }
       this.emit();
     }
   }

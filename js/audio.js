@@ -108,4 +108,8 @@ const Sound = {
   win() { [523,659,784,1046].forEach((f,i)=>setTimeout(()=>this.tone(f,0.2,'triangle',0.28),i*120)); },
   lose() { [440,349,262,196].forEach((f,i)=>setTimeout(()=>this.tone(f,0.25,'sawtooth',0.25),i*140)); },
   kill() { this.tone(200, 0.06, 'square', 0.12, 120); },
+  bossDown() { this.noise(0.5, 0.5, 400); [392,523,659].forEach((f,i)=>setTimeout(()=>this.tone(f,0.18,'triangle',0.3,f*1.2),i*90)); },
+  waveClear() { this.tone(587, 0.12, 'triangle', 0.24, 784); this.tone(880, 0.14, 'triangle', 0.2, 988); },
+  error() { this.tone(180, 0.12, 'sawtooth', 0.22, 120); },
+  coin() { this.tone(880, 0.05, 'square', 0.18, 1320); this.tone(1320, 0.07, 'square', 0.14, 1760); },
 };

@@ -13,7 +13,7 @@ class Enemy {
     this.slowFactor = 1; this.slowTimer = 0;
     this.frozen = 0;
     this.dots = []; // {dps, time, pct}
-    this.healCd = 0; this.spawnCd = d.spawnEvery || 0;
+    this.healCd = 0; this.spawnCd = d.spawnEvery || 0; this.spawnCount = 0;
     this.hitFlash = 0;
     this.dist = 0; // total distance traveled (for targeting "first")
     // set start position
@@ -97,11 +97,13 @@ class Enemy {
     }
     // boss regen
     if (this.def.regen && !this.dead) { this.hp = Math.min(this.maxHp, this.hp + this.def.regen * dt); }
-    // boss continuous spawns (hivemind)
+    // boss continuous spawns (hivemind) — capped so it cannot flood the board
     if (this.def.spawns && !this.dead) {
       this.spawnCd -= dt;
-      if (this.spawnCd <= 0) {
+      const cap = this.def.maxSpawns != null ? this.def.maxSpawns : Infinity;
+      if (this.spawnCd <= 0 && this.spawnCount < cap) {
         this.spawnCd = this.def.spawnEvery;
+        this.spawnCount++;
         this.game.spawnAt(this.def.spawns, this.x, this.y, this.pathIndex, this.t);
       }
     }
@@ -373,9 +375,10 @@ class Tower {
       const hitSet = new Set();
       let cur = target, from = { x: this.x, y: this.y };
       let jumps = this.stats.chains + 1;
+      const armorMul = this.stats.armorMul != null ? this.stats.armorMul : 1;
       for (let j = 0; j < jumps && cur; j++) {
         if (cur.dead && j > 0) break;
-        cur.damage(dmg * Math.pow(0.85, j));
+        cur.damage(dmg * Math.pow(0.85, j), { armorMul });
         if (this.stats.stun) cur.freeze(this.stats.stun);
         hitSet.add(cur);
         this.game.beams.push({ x1: from.x, y1: from.y, x2: cur.x, y2: cur.y, life: 0.12, color: this.def.color });

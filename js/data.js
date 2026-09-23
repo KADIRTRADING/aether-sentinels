@@ -8,13 +8,17 @@ const TILE = 44; // logical tile size, scaled at render time
 // Each tower has a distinct strategic role. Upgrades follow 3 tiers per tower.
 const TOWERS = {
   arc: {
-    id: 'arc', name: 'Arc Coil', glyph: '⚡', color: '#5ad1ff', role: 'Chain lightning — hits multiple foes',
+    id: 'arc', name: 'Arc Coil', glyph: '⚡', color: '#5ad1ff',
+    role: 'Chain lightning — energy damage ignores half of armor, hits several foes',
     cost: 90,
-    base: { range: 3.0, dmg: 14, rate: 0.9, chains: 2, chainRange: 2.0, splash: 0 },
+    // Playtest fix: at dmg 14 vs armor 14 this tower did ~1 DPS and was dead
+    // weight from wave 5. Energy arcs now bypass half of armor (armorMul 0.5)
+    // and base damage is higher, giving it a real anti-crowd role.
+    base: { range: 3.0, dmg: 22, rate: 0.85, chains: 2, chainRange: 2.0, splash: 0, armorMul: 0.5 },
     tiers: [
-      { cost: 110, desc: '+1 chain target, +6 dmg', mod: { chains: 1, dmg: 6 } },
-      { cost: 180, desc: '+1 chain, +8 dmg, +0.4 range', mod: { chains: 1, dmg: 8, range: 0.4 } },
-      { cost: 320, desc: 'Overload: +2 chains, chains apply short stun', mod: { chains: 2, dmg: 10, stun: 0.3 } },
+      { cost: 110, desc: '+1 chain target, +10 dmg', mod: { chains: 1, dmg: 10 } },
+      { cost: 180, desc: '+1 chain, +12 dmg, +0.4 range', mod: { chains: 1, dmg: 12, range: 0.4 } },
+      { cost: 320, desc: 'Overload: +2 chains, arcs briefly stun', mod: { chains: 2, dmg: 14, stun: 0.3 } },
     ],
     kind: 'chain'
   },
@@ -63,13 +67,17 @@ const TOWERS = {
     kind: 'support'
   },
   venom: {
-    id: 'venom', name: 'Venom Spire', glyph: '☣', color: '#8dff6b', role: 'Damage-over-time, shreds high-HP targets',
-    cost: 110,
-    base: { range: 3.0, dmg: 8, rate: 1.0, dot: 12, dotDur: 3.0 },
+    id: 'venom', name: 'Venom Spire', glyph: '☣', color: '#8dff6b',
+    role: 'Poison over time — ignores armor, best against high-HP targets',
+    // Playtest fix: was the strictly-dominant pick (36 dps/100g, armor-immune).
+    // Cost raised and poison tuned so it trades off against burst towers, and it
+    // is now weaker against low-HP swarms (poison needs time to tick).
+    cost: 130,
+    base: { range: 3.0, dmg: 6, rate: 1.1, dot: 11, dotDur: 3.0 },
     tiers: [
-      { cost: 120, desc: 'Stronger poison stacks', mod: { dot: 10, dotDur: 0.5 } },
-      { cost: 200, desc: '+range, +poison, faster', mod: { range: 0.5, dot: 12, rate: -0.2 } },
-      { cost: 380, desc: 'Necrosis: poison % of max HP per tick', mod: { dotPct: 0.02, dot: 10 } },
+      { cost: 130, desc: 'Stronger poison stacks', mod: { dot: 8, dotDur: 0.5 } },
+      { cost: 210, desc: '+range, +poison, faster', mod: { range: 0.5, dot: 10, rate: -0.2 } },
+      { cost: 380, desc: 'Necrosis: poison also burns % of max HP', mod: { dotPct: 0.015, dot: 9 } },
     ],
     kind: 'dot'
   },
@@ -134,18 +142,32 @@ const HERO_ORDER = ['pistol', 'smg', 'rifle', 'sniper', 'minigun', 'rocket'];
 const HERO_BUYABLE = ['pistol'];
 
 // ---------- ENEMY DEFINITIONS ----------
+// Each enemy is a distinct counter-check on the player's tower mix:
+//   drone/runner  -> baseline & speed pressure (splash / fast towers)
+//   swarm         -> crowds (splash, chain)
+//   brute         -> high HP (poison, railgun)
+//   shield/Warden -> heavy armor (railgun pierce, arc's half-armor energy)
+//   healer/Mender -> sustains the group (focus-fire "Strongest" targeting)
+//   phantom       -> 25% dodge (DoT & AoE can't be dodged)
+// HP raised from the original values so late waves demand upgrades, not just
+// more base towers (see test/dps-audit.js: required DPS was far too low).
 const ENEMIES = {
-  drone:   { name: 'Drone',    hp: 60,   speed: 1.6, gold: 6,  color: '#9fb4ff', r: 0.30, armor: 0 },
-  runner:  { name: 'Runner',   hp: 45,   speed: 2.8, gold: 7,  color: '#7dffcf', r: 0.26, armor: 0 },
-  brute:   { name: 'Brute',    hp: 220,  speed: 1.1, gold: 14, color: '#ff9d6b', r: 0.40, armor: 6 },
-  shield:  { name: 'Warden',   hp: 160,  speed: 1.3, gold: 16, color: '#c9a3ff', r: 0.36, armor: 14 },
-  swarm:   { name: 'Spawnling',hp: 28,   speed: 2.1, gold: 3,  color: '#ffd36b', r: 0.22, armor: 0 },
-  healer:  { name: 'Mender',   hp: 120,  speed: 1.4, gold: 18, color: '#6bffb0', r: 0.34, armor: 4, heal: 8, healRange: 2.2 },
-  phantom: { name: 'Phantom',  hp: 90,   speed: 1.9, gold: 20, color: '#b0b7d6', r: 0.30, armor: 0, dodge: 0.25 },
-  // Bosses
-  titan:   { name: 'Aether Titan', hp: 4200, speed: 0.7, gold: 300, color: '#ff5470', r: 0.7, armor: 20, boss: true, splitOnDeath: null, resist: 0.2 },
-  hivemind:{ name: 'Hive Mind',    hp: 5200, speed: 0.6, gold: 350, color: '#c86bff', r: 0.75, armor: 12, boss: true, spawns: 'swarm', spawnEvery: 2.2, resist: 0.15 },
-  colossus:{ name: 'Void Colossus', hp: 9000, speed: 0.55, gold: 500, color: '#ff3d5e', r: 0.85, armor: 30, boss: true, regen: 40, resist: 0.25 },
+  drone:   { name: 'Drone',    hp: 85,   speed: 1.6, gold: 6,  color: '#9fb4ff', r: 0.30, armor: 0 },
+  runner:  { name: 'Runner',   hp: 65,   speed: 2.8, gold: 7,  color: '#7dffcf', r: 0.26, armor: 0 },
+  brute:   { name: 'Brute',    hp: 320,  speed: 1.1, gold: 15, color: '#ff9d6b', r: 0.40, armor: 8 },
+  shield:  { name: 'Warden',   hp: 230,  speed: 1.3, gold: 17, color: '#c9a3ff', r: 0.36, armor: 16 },
+  swarm:   { name: 'Spawnling',hp: 40,   speed: 2.1, gold: 3,  color: '#ffd36b', r: 0.22, armor: 0 },
+  healer:  { name: 'Mender',   hp: 175,  speed: 1.4, gold: 19, color: '#6bffb0', r: 0.34, armor: 4, heal: 10, healRange: 2.2 },
+  phantom: { name: 'Phantom',  hp: 130,  speed: 1.9, gold: 21, color: '#b0b7d6', r: 0.30, armor: 0, dodge: 0.25 },
+  // ---- Bosses ----
+  // Tuned from playtesting (test/boss-audit.js): previously every boss walked
+  // through a competent defence and cost 10 lives. HP/armor/resist reduced and
+  // Hive Mind's minion spawning is now capped so it can't flood the board.
+  // Bosses remain a real threat: they still need focused fire + slows to stop.
+  titan:   { name: 'Aether Titan',  hp: 3400, speed: 0.62, gold: 300, color: '#ff5470', r: 0.7,  armor: 12, boss: true, resist: 0.15 },
+  hivemind:{ name: 'Hive Mind',     hp: 4200, speed: 0.55, gold: 350, color: '#c86bff', r: 0.75, armor: 10, boss: true, resist: 0.12,
+             spawns: 'swarm', spawnEvery: 2.6, maxSpawns: 12 },
+  colossus:{ name: 'Void Colossus', hp: 6200, speed: 0.5,  gold: 500, color: '#ff3d5e', r: 0.85, armor: 20, boss: true, resist: 0.2, regen: 22 },
 };
 
 // ---------- MAP DEFINITIONS ----------
@@ -154,71 +176,131 @@ const ENEMIES = {
 // We generate build nodes procedurally around the path per map for variety.
 function makePath(points) { return points.map(p => ({ x: p[0], y: p[1] })); }
 
+// diffScale drives wave threat; startGold/lives/waves are tuned alongside it so
+// the labelled difficulty matches measured difficulty (see test/balance.test.js).
+// Shorter wave counts keep a mobile session brisk (~3–6 min per map).
 const MAPS = [
   {
     id: 0, name: 'Verdant Pass', diff: 'Easy', cols: 16, rows: 11,
     bg: ['#0d2018', '#0a1a14'], pathColor: '#1f3d2e',
     path: makePath([[-1,2],[3,2],[3,7],[8,7],[8,3],[12,3],[12,8],[16,8]]),
-    startGold: 220, lives: 20, waves: 12, bossWave: 12, bossType: 'titan',
+    startGold: 280, lives: 20, waves: 10, bossWave: 10, bossType: 'titan',
+    diffScale: 0.85,
   },
   {
     id: 1, name: 'Frost Canyon', diff: 'Normal', cols: 16, rows: 11,
     bg: ['#0c1626', '#0a1120'], pathColor: '#1c2c48',
     path: makePath([[-1,5],[4,5],[4,1],[9,1],[9,9],[13,9],[13,4],[16,4]]),
-    startGold: 240, lives: 20, waves: 14, bossWave: 14, bossType: 'hivemind',
+    startGold: 260, lives: 20, waves: 12, bossWave: 12, bossType: 'hivemind',
+    diffScale: 1.15,
   },
   {
     id: 2, name: 'Ember Foundry', diff: 'Hard', cols: 17, rows: 12,
     bg: ['#20120c', '#170c08'], pathColor: '#3d241c',
     path: makePath([[-1,1],[5,1],[5,6],[2,6],[2,10],[10,10],[10,3],[14,3],[14,9],[17,9]]),
-    startGold: 260, lives: 18, waves: 16, bossWave: 16, bossType: 'colossus',
+    startGold: 260, lives: 18, waves: 14, bossWave: 14, bossType: 'colossus',
+    diffScale: 1.5,
   },
   {
     id: 3, name: 'Void Nexus', diff: 'Extreme', cols: 18, rows: 12,
     bg: ['#160b26', '#0e0818'], pathColor: '#2c1c48',
     path: makePath([[-1,6],[3,6],[3,2],[7,2],[7,10],[11,10],[11,2],[15,2],[15,7],[18,7]]),
-    startGold: 280, lives: 16, waves: 18, bossWave: 18, bossType: 'colossus',
+    startGold: 250, lives: 16, waves: 16, bossWave: 16, bossType: 'colossus',
+    diffScale: 1.95,
   },
 ];
 
 // ---------- WAVE GENERATION ----------
-// Deterministic but scaling. Boss appears on bossWave.
+// Fully deterministic (seeded per map) so difficulty is reproducible and tunable.
+// Design goals from playtesting:
+//   * Difficulty scales monotonically with map.diffScale (Easy < Normal < Hard < Extreme).
+//   * Waves 1–2 are a gentle ramp (learn controls) but never free if undefended.
+//   * No random spikes: enemy "budget" grows on a smooth curve; composition is
+//     scheduled by wave band, with light per-wave variation from the seed.
+//   * Boss wave = boss + themed escort sized to the map.
+//
+// Each enemy has a "threat" weight (roughly effective HP × speed pressure) used
+// to size waves consistently regardless of which enemy types are chosen.
+// Threat ≈ effective HP cost to the player, accounting for armor/dodge/support.
+// Keep these in sync with ENEMIES hp values (test/balance.test.js asserts this).
+const ENEMY_THREAT = {
+  drone: 13, runner: 14, swarm: 7, brute: 46, shield: 42, phantom: 30, healer: 36,
+};
+
 function generateWaves(map) {
+  const rng = U.seededRng((map.id + 1) * 977 + 12345);
+  const scale = map.diffScale != null ? map.diffScale : (1 + map.id * 0.28);
   const waves = [];
-  const scale = 1 + map.id * 0.28; // harder maps scale hp/count
-  for (let w = 1; w <= map.waves; w++) {
+  const N = map.waves;
+
+  for (let w = 1; w <= N; w++) {
     const isBoss = w === map.bossWave;
-    const t = w / map.waves;
     const groups = [];
+
     if (isBoss) {
-      groups.push({ type: map.bossType, count: 1, gap: 0, delay: 0 });
-      // escort
-      groups.push({ type: 'brute', count: 3 + map.id, gap: 0.8, delay: 1.5 });
-      groups.push({ type: 'swarm', count: 8 + map.id * 2, gap: 0.35, delay: 3 });
-    } else {
-      const budget = Math.floor((10 + w * 6) * scale);
-      let b = budget;
-      // early waves: drones/runners; mid: brutes/shields; late: mix + phantom/healer
-      const pool = [];
-      pool.push(['drone', 8]);
-      if (w >= 3) pool.push(['runner', 7]);
-      if (w >= 4) pool.push(['swarm', 4]);
-      if (w >= 5) pool.push(['brute', 22]);
-      if (w >= 6) pool.push(['shield', 24]);
-      if (w >= 8) pool.push(['phantom', 20]);
-      if (w >= 7 && w % 2 === 0) pool.push(['healer', 26]);
-      let delay = 0;
-      let guard = 0;
-      while (b > 0 && guard++ < 40) {
-        const [type, cost] = U.choice(pool);
-        if (cost > b && groups.length) break;
-        const count = U.clamp(Math.round(U.rand(3, 6) + t * 4), 2, 12);
-        groups.push({ type, count, gap: ENEMIES[type].speed > 2 ? 0.4 : 0.6, delay });
-        delay += 0.4;
-        b -= cost * count / 4;
-      }
+      groups.push({ type: map.bossType, count: 1, gap: 0, delay: 0.5 });
+      groups.push({ type: 'brute', count: 2 + map.id, gap: 0.9, delay: 2.0 });
+      if (w > 6) groups.push({ type: 'shield', count: 2 + map.id, gap: 0.9, delay: 4.0 });
+      groups.push({ type: 'swarm', count: 6 + map.id * 2, gap: 0.32, delay: 6.0 });
+      waves.push({ index: w, isBoss, groups });
+      continue;
     }
+
+    // Smooth, strictly-increasing threat budget: gentle early so the player can
+    // learn, with real late-game acceleration. Tuned against test/balance.test.js
+    // so base towers alone are not sufficient — upgrades are required.
+    const prog = (w - 1) / Math.max(1, N - 1);           // 0..1 across the map
+    const base = 26 + w * 11;                             // linear growth
+    const curve = 150 * prog * prog * prog;               // strong late acceleration
+    let budget = Math.round((base + curve) * scale);
+
+    // Composition bands (which enemy types are available this wave).
+    const pool = [];
+    pool.push('drone');
+    if (w >= 2) pool.push('runner');
+    if (w >= 3) pool.push('swarm');
+    if (w >= 4) pool.push('brute');
+    if (w >= 5) pool.push('shield');
+    if (w >= 6) pool.push('phantom');
+    if (w >= 7 && w % 2 === 1) pool.push('healer');       // occasional support enemy
+
+    // Feature enemy for this wave (rotates deterministically) gets the bulk of
+    // the budget; a filler type gets the rest. This produces readable waves.
+    const feature = pool[Math.floor(rng() * pool.length)];
+    const filler = w <= 2 ? 'drone' : (rng() < 0.5 ? 'drone' : 'runner');
+
+    // Allocate the feature group first, then give the FILLER whatever threat
+    // remains after rounding. This keeps the realised wave threat close to the
+    // budget so the curve stays monotonic (no random difficulty dips).
+    let delay = 0;
+    const addGroup = (type, threatBudget) => {
+      const per = ENEMY_THREAT[type] || 10;
+      let count = Math.max(2, Math.round(threatBudget / per));
+      count = Math.min(count, type === 'swarm' ? 18 : 14);
+      const gap = ENEMIES[type].speed > 2 ? 0.42 : 0.62;
+      groups.push({ type, count, gap, delay });
+      delay += 0.35;
+      return count * per; // realised threat
+    };
+
+    const used = addGroup(feature, budget * 0.65);
+    let remaining = Math.max(ENEMY_THREAT[filler] * 2, budget - used);
+    const used2 = addGroup(filler, remaining);
+    // If per-group count caps swallowed part of the budget (common in late waves
+    // when the feature is a cheap swarm type), top up with a heavy escort group
+    // so the realised threat still tracks the intended curve.
+    const shortfall = budget - used - used2;
+    if (shortfall > 40) {
+      const heavy = w >= 5 ? 'brute' : 'drone';
+      addGroup(heavy, shortfall);
+    }
+
     waves.push({ index: w, isBoss, groups });
   }
   return waves;
+}
+
+// Convenience for tests/tools: total threat of a wave.
+function waveThreat(wave) {
+  return wave.groups.reduce((a, g) => a + g.count * (ENEMY_THREAT[g.type] || (ENEMIES[g.type] ? 40 : 0)), 0);
 }
